@@ -42,7 +42,8 @@ const Login = () => {
         logEvent(analytics, "login", { method: "email" });
       }
       navigate("/");
-    } catch (error) {
+    } catch (error: any) {
+      // Error is already handled in AuthContext with toast notification
       console.error("Login error:", error);
     } finally {
       setIsLoading(false);
@@ -59,7 +60,8 @@ const Login = () => {
         logEvent(analytics, "login", { method: "google" });
       }
       navigate("/");
-    } catch (error) {
+    } catch (error: any) {
+      // Error is already handled in AuthContext with toast notification
       console.error("Google login error:", error);
     } finally {
       setIsLoading(false);

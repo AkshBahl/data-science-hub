@@ -49,7 +49,8 @@ const SignUp = () => {
         logEvent(analytics, "sign_up", { method: "email" });
       }
       navigate("/");
-    } catch (error) {
+    } catch (error: any) {
+      // Error is already handled in AuthContext with toast notification
       console.error("Signup error:", error);
     } finally {
       setIsLoading(false);
@@ -66,7 +67,8 @@ const SignUp = () => {
         logEvent(analytics, "sign_up", { method: "google" });
       }
       navigate("/");
-    } catch (error) {
+    } catch (error: any) {
+      // Error is already handled in AuthContext with toast notification
       console.error("Google signup error:", error);
     } finally {
       setIsLoading(false);
