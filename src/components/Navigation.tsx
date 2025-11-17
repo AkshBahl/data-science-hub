@@ -19,7 +19,9 @@ const Navigation = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup";
+  const isAuthPage = ["/login", "/signup", "/admin/login"].includes(location.pathname);
+  const isAdminPage = location.pathname.startsWith("/admin");
+  const hideNavLinks = isAuthPage || isAdminPage;
 
   const handleLogout = async () => {
     try {
@@ -65,7 +67,7 @@ const Navigation = () => {
           </Link>
 
           {/* Desktop Navigation */}
-          {!isAuthPage && (
+          {!hideNavLinks && (
             <div className="hidden lg:flex items-center space-x-1">
               {navLinks.map((link) => (
                 <Link key={link.to} to={link.to}>
@@ -80,7 +82,7 @@ const Navigation = () => {
           {/* Auth Buttons & Theme Toggle */}
           <div className="hidden lg:flex items-center space-x-4">
             <ThemeToggle />
-            {!isAuthPage && currentUser ? (
+            {!hideNavLinks && currentUser ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -116,7 +118,7 @@ const Navigation = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : !isAuthPage ? (
+            ) : !hideNavLinks ? (
               <>
                 <Button
                   variant="ghost"
@@ -131,7 +133,7 @@ const Navigation = () => {
           </div>
 
           {/* Mobile Menu Button */}
-          {!isAuthPage && (
+          {!hideNavLinks && (
             <button
               className="lg:hidden p-2"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -143,7 +145,7 @@ const Navigation = () => {
         </div>
 
         {/* Mobile Menu */}
-        {!isAuthPage && isMenuOpen && (
+        {!hideNavLinks && isMenuOpen && (
           <div className="lg:hidden py-4 animate-fade-in">
             <div className="flex flex-col space-y-2">
               {navLinks.map((link) => (

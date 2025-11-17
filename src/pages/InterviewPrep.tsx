@@ -1,173 +1,149 @@
+import { useEffect, useMemo, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Lock, Search, Filter, Database, Code, Brain, BarChart } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Layers } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { useToast } from "@/hooks/use-toast";
+
+type InterviewQuestion = {
+  id: string;
+  title?: string;
+  question: string;
+  tier: "free" | "paid";
+};
+
+type ModuleSummary = {
+  title: string;
+  total: number;
+  freeCount: number;
+  premiumCount: number;
+};
+
+const DEFAULT_TITLE = "General";
 
 const InterviewPrep = () => {
-  const topics = [
-    { name: "SQL", icon: Database, count: 50, color: "text-blue-400" },
-    { name: "Python", icon: Code, count: 50, color: "text-green-400" },
-    { name: "Machine Learning", icon: Brain, count: 60, color: "text-purple-400" },
-    { name: "Statistics", icon: BarChart, count: 40, color: "text-orange-400" },
-  ];
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
-  const sampleQuestions = [
-    {
-      id: 1,
-      title: "Write a SQL query to find the second highest salary",
-      difficulty: "Medium",
-      topic: "SQL",
-      company: "Google",
-      isFree: true,
-    },
-    {
-      id: 2,
-      title: "Implement K-Means clustering from scratch",
-      difficulty: "Hard",
-      topic: "Machine Learning",
-      company: "Meta",
-      isFree: true,
-    },
-    {
-      id: 3,
-      title: "Explain Central Limit Theorem with examples",
-      difficulty: "Medium",
-      topic: "Statistics",
-      company: "Amazon",
-      isFree: true,
-    },
-    {
-      id: 4,
-      title: "Optimize a Python function for large datasets",
-      difficulty: "Hard",
-      topic: "Python",
-      company: "Netflix",
-      isFree: false,
-    },
-    {
-      id: 5,
-      title: "Design a recommendation system architecture",
-      difficulty: "Hard",
-      topic: "Machine Learning",
-      company: "Spotify",
-      isFree: false,
-    },
-  ];
+  const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "interviewQuestions"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setQuestions(
+          snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              title: data.title,
+              question: data.question,
+              tier: data.tier ?? "free",
+            } as InterviewQuestion;
+          }),
+        );
+        setLoading(false);
+      },
+      (error) => {
+        console.error(error);
+        toast({
+          title: "Unable to load question modules",
+          description: "Please try again later.",
+          variant: "destructive",
+        });
+        setLoading(false);
+      },
+    );
+
+    return unsubscribe;
+  }, [toast]);
+
+  const moduleSummaries = useMemo<ModuleSummary[]>(() => {
+    const map = new Map<string, ModuleSummary>();
+    questions.forEach((q) => {
+      const title = q.title?.trim() || DEFAULT_TITLE;
+      if (!map.has(title)) {
+        map.set(title, { title, total: 0, freeCount: 0, premiumCount: 0 });
+      }
+      const summary = map.get(title)!;
+      summary.total += 1;
+      if (q.tier === "free") summary.freeCount += 1;
+      else summary.premiumCount += 1;
+    });
+    return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }, [questions]);
+
+  const handleOpenModule = (title: string) => {
+    const slug = encodeURIComponent(title);
+    navigate(`/interview-prep/module/${slug}`);
+  };
 
   return (
     <div className="min-h-screen py-20">
-      <div className="container mx-auto px-4">
-        {/* Header */}
-        <div className="text-center mb-12 animate-fade-up">
-          <h1 className="text-5xl font-bold mb-4">
+      <div className="container mx-auto px-4 space-y-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-5xl font-bold">
             <span className="bg-gradient-primary bg-clip-text text-transparent">
               Interview Preparation Hub
             </span>
           </h1>
           <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Master data science interviews with 200+ carefully curated questions from top tech companies
+            Pick a topic to dive into curated free and premium questions. Each module contains real interview prompts
+            vetted by our mentors.
           </p>
         </div>
 
-        {/* Topics Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {topics.map((topic, index) => {
-            const Icon = topic.icon;
-            return (
-              <GlassCard key={index} className="text-center group cursor-pointer">
-                <div className={`inline-flex p-4 bg-gradient-primary rounded-full mb-4 ${topic.color}`}>
-                  <Icon className="h-8 w-8" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2">{topic.name}</h3>
-                <p className="text-2xl font-bold text-primary">{topic.count}</p>
-                <p className="text-sm text-muted-foreground">Questions</p>
-              </GlassCard>
-            );
-          })}
-        </div>
-
-        {/* Search and Filter */}
-        <GlassCard className="mb-8">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input
-                placeholder="Search questions..."
-                className="pl-10 bg-background/50"
-              />
-            </div>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Filter className="h-4 w-4" />
-              Filter
-            </Button>
+        <GlassCard className="p-6 flex items-center justify-between flex-wrap gap-4">
+          <div className="space-y-1">
+            <p className="text-sm uppercase tracking-[0.3em] text-primary font-semibold">Question modules</p>
+            <h2 className="text-3xl font-bold">
+              {moduleSummaries.length} {moduleSummaries.length === 1 ? "topic" : "topics"} ready to explore
+            </h2>
+            <p className="text-muted-foreground">
+              Click any module to view all free questions (and premium ones if your account is upgraded).
+            </p>
           </div>
+          <Layers className="h-14 w-14 text-primary/60" />
         </GlassCard>
 
-        {/* Premium Banner */}
-        <GlassCard className="mb-8 bg-gradient-accent text-center py-8">
-          <h3 className="text-2xl font-bold mb-2">🎉 Special Offer</h3>
-          <p className="text-lg mb-4">Get 100 questions free + 100 premium questions for just ₹999</p>
-          <Button size="lg" className="bg-background text-foreground hover:bg-background/90">
-            Unlock Premium
-          </Button>
-        </GlassCard>
-
-        {/* Questions List */}
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold mb-6">All Questions</h2>
-          {sampleQuestions.map((question) => (
-            <GlassCard
-              key={question.id}
-              className={`relative ${!question.isFree && "opacity-75"}`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="text-xs">
-                      {question.topic}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className={
-                        question.difficulty === "Easy"
-                          ? "border-green-500 text-green-500"
-                          : question.difficulty === "Medium"
-                          ? "border-yellow-500 text-yellow-500"
-                          : "border-red-500 text-red-500"
-                      }
-                    >
-                      {question.difficulty}
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      {question.company}
-                    </Badge>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading modules…</p>
+        ) : moduleSummaries.length === 0 ? (
+          <GlassCard className="text-center py-10">
+            <p className="text-lg font-semibold mb-2">No question modules yet</p>
+            <p className="text-sm text-muted-foreground">
+              As soon as the first question is published, you&apos;ll see it here.
+            </p>
+          </GlassCard>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {moduleSummaries.map((module) => (
+              <GlassCard
+                key={module.title}
+                className="p-6 space-y-3 cursor-pointer hover:border-primary/60 transition"
+                onClick={() => handleOpenModule(module.title)}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold">{module.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {module.freeCount} free · {module.premiumCount} premium
+                    </p>
                   </div>
-                  <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
-                    {question.title}
-                    {!question.isFree && (
-                      <Lock className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </h3>
+                  <Badge variant="secondary">{module.total} Q</Badge>
                 </div>
-                <Button
-                  variant={question.isFree ? "default" : "outline"}
-                  className={question.isFree ? "bg-gradient-primary" : ""}
-                  disabled={!question.isFree}
-                >
-                  {question.isFree ? "Solve" : "Unlock"}
+                <Button variant="ghost" className="px-0 text-primary" onClick={() => handleOpenModule(module.title)}>
+                  Browse module →
                 </Button>
-              </div>
-            </GlassCard>
-          ))}
-        </div>
-
-        {/* Load More */}
-        <div className="text-center mt-8">
-          <Button variant="outline" size="lg">
-            Load More Questions
-          </Button>
-        </div>
+              </GlassCard>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

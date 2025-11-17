@@ -8,7 +8,7 @@ import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Mail, Lock, Loader2 } from "lucide-react";
+import { Mail, Lock, Loader2, Shield } from "lucide-react";
 import { logEvent } from "firebase/analytics";
 import { getAnalyticsInstance } from "@/lib/firebase";
 
@@ -175,6 +175,19 @@ const Login = () => {
             </svg>
             Sign in with Google
           </Button>
+
+          <div className="text-center text-sm text-muted-foreground mt-6 space-y-2">
+            <p>Site administrators can access the portal below.</p>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full border border-dashed border-border text-foreground/80"
+              onClick={() => navigate("/admin/login")}
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              Admin Login
+            </Button>
+          </div>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Don't have an account?{" "}

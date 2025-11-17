@@ -1,153 +1,71 @@
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Clock, Star, Users, PlayCircle } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 
 const Courses = () => {
-  const courses = [
-    {
-      title: "Python for Data Science Masterclass",
-      description: "Master Python programming for data analysis and machine learning",
-      level: "Beginner",
-      duration: "12 weeks",
-      students: 500,
-      rating: 4.9,
-      price: "₹4,999",
-      isFree: false,
-      thumbnail: "bg-gradient-primary",
-    },
-    {
-      title: "SQL for Data Analytics",
-      description: "Complete guide to SQL for data analysis and business intelligence",
-      level: "Beginner",
-      duration: "8 weeks",
-      students: 450,
-      rating: 4.8,
-      price: "Free",
-      isFree: true,
-      thumbnail: "bg-gradient-accent",
-    },
-    {
-      title: "Machine Learning A-Z",
-      description: "Comprehensive machine learning course with hands-on projects",
-      level: "Intermediate",
-      duration: "16 weeks",
-      students: 350,
-      rating: 4.9,
-      price: "₹9,999",
-      isFree: false,
-      thumbnail: "bg-blue-600",
-    },
-    {
-      title: "Statistics for Data Science",
-      description: "Essential statistics concepts for data scientists",
-      level: "Beginner",
-      duration: "10 weeks",
-      students: 400,
-      rating: 4.7,
-      price: "Free",
-      isFree: true,
-      thumbnail: "bg-purple-600",
-    },
-  ];
+  const UDEMY_LINK =
+    "https://www.udemy.com/course/full-stack-data-science-with-genai/?referralCode=91337FF58EE03DE3A53D";
 
-  const bundles = [
-    {
-      name: "Complete Data Science Bundle",
-      courses: 4,
-      originalPrice: "₹24,996",
-      bundlePrice: "₹14,999",
-      savings: "40%",
-    },
+  const highlights = [
+    "Full-stack data science curriculum with GenAI projects",
+    "Hands-on labs covering Python, SQL, ML, MLOps, and deployment",
+    "Interview preparation vault with real questions",
+    "Lifetime Udemy access + completion certificate",
   ];
 
   return (
     <div className="min-h-screen py-20">
-      <div className="container mx-auto px-4">
-        {/* Header */}
-        <div className="text-center mb-16 animate-fade-up">
-          <h1 className="text-5xl font-bold mb-4">
-            <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Courses
-            </span>
+      <div className="container mx-auto px-4 max-w-4xl space-y-10">
+        <div className="text-center animate-fade-up space-y-4">
+          <h1 className="text-5xl font-bold">
+            <span className="bg-gradient-primary bg-clip-text text-transparent">Courses</span>
           </h1>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Comprehensive courses designed to take you from beginner to advanced data scientist
+          <p className="text-xl text-muted-foreground">
+            Learn with our flagship Full-Stack Data Science with GenAI program hosted on Udemy.
           </p>
         </div>
 
-        {/* Bundle Offer */}
-        <GlassCard className="mb-12 bg-gradient-accent text-center py-8">
-          <h3 className="text-2xl font-bold mb-2">🎓 Special Bundle Offer</h3>
-          <p className="text-lg mb-4">
-            Get all {bundles[0].courses} courses for {bundles[0].bundlePrice} (Save {bundles[0].savings}!)
-          </p>
-          <p className="text-sm opacity-80 mb-4">
-            Original Price: <span className="line-through">{bundles[0].originalPrice}</span>
-          </p>
-          <Button size="lg" className="bg-background text-foreground hover:bg-background/90">
-            Get Bundle Now
-          </Button>
-        </GlassCard>
+        <GlassCard className="p-8 space-y-6">
+          <div className="space-y-3">
+            <p className="text-sm uppercase tracking-[0.3em] text-primary font-semibold">Featured program</p>
+            <h2 className="text-3xl font-bold leading-snug">
+              Full-Stack Data Science with GenAI &nbsp;
+              <span className="text-primary">(Udemy)</span>
+            </h2>
+            <p className="text-muted-foreground text-lg">
+              Build end-to-end ML systems, integrate generative AI, and master deployment with a single practical course.
+            </p>
+          </div>
 
-        {/* Courses Grid */}
-        <div className="grid md:grid-cols-2 gap-8 mb-16">
-          {courses.map((course, index) => (
-            <GlassCard key={index} className="flex flex-col">
-              <div className={`h-48 rounded-lg mb-4 flex items-center justify-center ${course.thumbnail}`}>
-                <PlayCircle className="h-16 w-16 text-white/80" />
+          <div className="grid gap-3">
+            {highlights.map((item) => (
+              <div key={item} className="flex items-start gap-3 text-sm text-foreground/90">
+                <CheckCircle className="h-5 w-5 text-primary mt-0.5" />
+                <span>{item}</span>
               </div>
-              
-              <div className="flex items-center gap-2 mb-3">
-                <Badge variant={course.isFree ? "secondary" : "default"}>
-                  {course.level}
-                </Badge>
-                {course.isFree && (
-                  <Badge className="bg-green-500">Free</Badge>
-                )}
-              </div>
+            ))}
+          </div>
 
-              <h3 className="text-2xl font-bold mb-2">{course.title}</h3>
-              <p className="text-muted-foreground mb-4 flex-grow">{course.description}</p>
+          <div className="bg-background/50 border border-dashed border-border rounded-xl p-4 text-sm text-muted-foreground">
+            This course currently houses all Bytes of Data premium lessons, notebooks, templates, and interview prep
+            resources. New cohorts and live mentor sessions are announced inside the course community.
+          </div>
 
-              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  <span>{course.duration}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Users className="h-4 w-4" />
-                  <span>{course.students}+</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  <span>{course.rating}</span>
-                </div>
-              </div>
-
-              <div className="border-t border-border pt-4 flex items-center justify-between">
-                <span className="text-2xl font-bold text-primary">{course.price}</span>
-                <Button className="bg-gradient-primary hover:shadow-glow-primary">
-                  {course.isFree ? "Enroll Free" : "Enroll Now"}
-                </Button>
-              </div>
-            </GlassCard>
-          ))}
-        </div>
-
-        {/* Udemy Section */}
-        <GlassCard className="text-center py-12">
-          <h2 className="text-3xl font-bold mb-4">
-            <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Also Available on Udemy
-            </span>
-          </h2>
-          <p className="text-lg text-muted-foreground mb-6 max-w-2xl mx-auto">
-            Check out our highly-rated courses on Udemy with lifetime access and certificate of completion
-          </p>
-          <Button size="lg" variant="outline" className="border-primary text-primary">
-            Visit Udemy Profile
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-wide text-muted-foreground">Hosted on</p>
+              <p className="text-lg font-semibold">Udemy · Lifetime access</p>
+            </div>
+            <Button
+              size="lg"
+              className="bg-gradient-primary hover:shadow-glow-primary"
+              asChild
+            >
+              <a href={UDEMY_LINK} target="_blank" rel="noreferrer">
+                View course on Udemy
+              </a>
+            </Button>
+          </div>
         </GlassCard>
       </div>
     </div>

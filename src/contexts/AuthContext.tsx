@@ -11,17 +11,28 @@ import {
   sendPasswordResetEmail,
   updateProfile,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
 interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
+  profile: UserProfile | null;
   signup: (email: string, password: string, displayName?: string) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  setUserPaidStatus: (userId: string, isPaid: boolean) => Promise<void>;
+}
+
+interface UserProfile {
+  displayName?: string | null;
+  email?: string | null;
+  isPaid: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,6 +48,7 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const { toast } = useToast();
 
   const getErrorMessage = (error: any): string => {
@@ -69,12 +81,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const ensureUserProfile = async (user: User) => {
+    if (!user?.uid) return;
+    const userRef = doc(db, "users", user.uid);
+    const snapshot = await getDoc(userRef);
+    if (snapshot.exists()) {
+      await setDoc(
+        userRef,
+        {
+          displayName: user.displayName ?? snapshot.data().displayName ?? "",
+          email: user.email ?? snapshot.data().email ?? "",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } else {
+      await setDoc(userRef, {
+        displayName: user.displayName ?? "",
+        email: user.email ?? "",
+        isPaid: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  };
+
   const signup = async (email: string, password: string, displayName?: string) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       if (displayName && userCredential.user) {
         await updateProfile(userCredential.user, { displayName });
       }
+      await ensureUserProfile(userCredential.user);
       toast({
         title: "Account created!",
         description: "Your account has been successfully created.",
@@ -92,11 +130,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      await ensureUserProfile(credential.user);
       toast({
         title: "Welcome back!",
         description: "You have successfully logged in.",
       });
+      return credential.user;
     } catch (error: any) {
       const errorMessage = getErrorMessage(error);
       toast({
@@ -129,7 +169,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      await ensureUserProfile(result.user);
       toast({
         title: "Welcome!",
         description: "You have successfully logged in with Google.",
@@ -163,6 +204,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const setUserPaidStatus = async (userId: string, isPaid: boolean) => {
+    try {
+      await setDoc(
+        doc(db, "users", userId),
+        {
+          isPaid,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      toast({
+        title: "User updated",
+        description: `The user has been marked as ${isPaid ? "paid" : "free"}.`,
+      });
+    } catch (error: any) {
+      const errorMessage = getErrorMessage(error);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -172,14 +238,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (!currentUser) {
+      setProfile(null);
+      return;
+    }
+
+    const userRef = doc(db, "users", currentUser.uid);
+    const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setProfile(snapshot.data() as UserProfile);
+      } else {
+        setProfile(null);
+      }
+    });
+
+    return unsubscribe;
+  }, [currentUser]);
+
   const value: AuthContextType = {
     currentUser,
     loading,
+    profile,
     signup,
     login,
     logout,
     loginWithGoogle,
     resetPassword,
+    setUserPaidStatus,
   };
 
   return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;

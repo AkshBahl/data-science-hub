@@ -20,8 +20,12 @@ import Contact from "./pages/Contact";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 import NotFound from "./pages/NotFound";
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
+import InterviewModule from "./pages/InterviewModule";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { PublicRoute } from "./components/PublicRoute";
+import { AdminRoute } from "./components/AdminRoute";
 
 const queryClient = new QueryClient();
 
@@ -53,6 +57,15 @@ const App = () => (
                       </PublicRoute>
                     }
                   />
+                  <Route path="/admin/login" element={<AdminLogin />} />
+                  <Route
+                    path="/admin"
+                    element={
+                      <AdminRoute>
+                        <AdminDashboard />
+                      </AdminRoute>
+                    }
+                  />
                   <Route
                     path="/"
                     element={
@@ -66,6 +79,14 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <InterviewPrep />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/interview-prep/module/:moduleSlug"
+                    element={
+                      <ProtectedRoute>
+                        <InterviewModule />
                       </ProtectedRoute>
                     }
                   />

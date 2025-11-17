@@ -54,17 +54,36 @@ VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
 VITE_FIREBASE_APP_ID=your-app-id
 VITE_FIREBASE_MEASUREMENT_ID=your-measurement-id
-
-# Admin credentials (used for the separate admin login)
-VITE_ADMIN_EMAIL=admin@example.com
-VITE_ADMIN_PASSWORD=SuperSecurePassword123
 ```
 
 **Important:** 
 - Replace the placeholder values with your actual Firebase config values
-- Change the admin email/password to your secure values and share them only with administrators
 - Never commit the `.env` file to version control (it should already be in `.gitignore`)
 - The `.env` file should be in the root directory, same level as `package.json`
+
+## Step 5: Create Admin Accounts
+
+1. Go to **Firebase Console → Authentication → Users** and create an admin user (email/password).
+2. In **Firestore → users collection**, open that user’s document and add `isAdmin: true`.
+3. Admins now log in via `/admin/login` using their Firebase credentials.
+
+## Step 6: Configure Contact Form Email (EmailJS)
+
+1. Create a free [EmailJS](https://www.emailjs.com/) account.
+2. Add a new service (e.g., Gmail) and create an email template that sends to `mahuritushar66@gmail.com`.
+3. In the EmailJS dashboard copy:
+   - **Service ID**
+   - **Template ID**
+   - **Public Key**
+4. Add these values to your `.env` file:
+
+```env
+VITE_EMAILJS_SERVICE_ID=your-service-id
+VITE_EMAILJS_TEMPLATE_ID=your-template-id
+VITE_EMAILJS_PUBLIC_KEY=your-public-key
+```
+
+5. Make sure the template expects variables named `from_name`, `from_email`, `subject`, `message`, and `to_email`.
 
 ## Step 5: Configure Authorized Domains (for Production)
 
