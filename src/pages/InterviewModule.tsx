@@ -3,11 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Lock, ArrowLeft } from "lucide-react";
+import { Lock, ArrowLeft, Code2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import CodeEditor from "@/components/CodeEditor";
+import AuthModal from "@/components/AuthModal";
 
 type InterviewQuestion = {
   id: string;
@@ -15,6 +17,23 @@ type InterviewQuestion = {
   answer: string;
   tier: "free" | "paid";
   createdAt?: Date;
+  title?: string;
+};
+
+// Helper function to detect language from module title
+const detectLanguage = (moduleTitle: string): string => {
+  const titleLower = moduleTitle.toLowerCase();
+  if (titleLower.includes("python")) return "python";
+  if (titleLower.includes("sql")) return "sql";
+  if (titleLower.includes("javascript") || titleLower.includes("js")) return "javascript";
+  if (titleLower.includes("typescript") || titleLower.includes("ts")) return "typescript";
+  if (titleLower.includes("java")) return "java";
+  if (titleLower.includes("c++") || titleLower.includes("cpp")) return "cpp";
+  if (titleLower.includes("c#") || titleLower.includes("csharp")) return "csharp";
+  if (titleLower.includes("go")) return "go";
+  if (titleLower.includes("rust")) return "rust";
+  // Default to python for data science questions
+  return "python";
 };
 
 const DEFAULT_TITLE = "General";
@@ -56,16 +75,19 @@ const InterviewModule = () => {
             answer: item.answer,
             tier: item.tier,
             createdAt: item.createdAt,
+            title: item.title,
           }));
 
         setQuestions(filtered);
         setLoading(false);
       },
       (error) => {
-        console.error(error);
+        console.error("Firebase error:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
         toast({
           title: "Unable to load questions",
-          description: "Please try again later.",
+          description: error.message || "Please check your Firebase security rules allow public read access.",
           variant: "destructive",
         });
         setLoading(false);
@@ -111,7 +133,7 @@ const InterviewModule = () => {
           ) : (
             <div className="space-y-4">
               {freeQuestions.map((question) => (
-                <QuestionCard key={question.id} question={question} />
+                <QuestionCard key={question.id} question={question} moduleTitle={moduleTitle} />
               ))}
             </div>
           )}
@@ -135,7 +157,7 @@ const InterviewModule = () => {
             ) : (
               <div className="space-y-4">
                 {premiumQuestions.map((question) => (
-                  <QuestionCard key={question.id} question={question} />
+                  <QuestionCard key={question.id} question={question} moduleTitle={moduleTitle} />
                 ))}
               </div>
             )
@@ -154,24 +176,76 @@ const InterviewModule = () => {
   );
 };
 
-const QuestionCard = ({ question }: { question: InterviewQuestion }) => {
+const QuestionCard = ({ question, moduleTitle }: { question: InterviewQuestion; moduleTitle: string }) => {
   const [showAnswer, setShowAnswer] = useState(false);
+  const [showCompiler, setShowCompiler] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const { currentUser } = useAuth();
+  const language = detectLanguage(moduleTitle);
+
+  const handleShowCompiler = () => {
+    if (!currentUser) {
+      setAuthMode("signup");
+      setAuthModalOpen(true);
+      return;
+    }
+    setShowCompiler((prev) => !prev);
+  };
+
+  const handleShowAnswer = () => {
+    if (!currentUser) {
+      setAuthMode("signup");
+      setAuthModalOpen(true);
+      return;
+    }
+    setShowAnswer((prev) => !prev);
+  };
+  
   return (
-    <GlassCard className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-base font-medium whitespace-pre-wrap text-foreground/90">{question.question}</p>
+    <>
+      <GlassCard className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <p className="text-base font-medium whitespace-pre-wrap text-foreground/90">{question.question}</p>
+          </div>
+          <div className="flex gap-2">
+            <Button 
+              variant="ghost" 
+              onClick={handleShowCompiler}
+              className="gap-2"
+            >
+              <Code2 className="h-4 w-4" />
+              {showCompiler ? "Hide compiler" : "Open compiler"}
+            </Button>
+            <Button variant="ghost" onClick={handleShowAnswer}>
+              {showAnswer ? "Hide answer" : "Show answer"}
+            </Button>
+          </div>
         </div>
-        <Button variant="ghost" onClick={() => setShowAnswer((prev) => !prev)}>
-          {showAnswer ? "Hide answer" : "Show answer"}
-        </Button>
-      </div>
-      {showAnswer && (
-        <div className="rounded-md bg-background/70 border border-border/70 p-4 text-sm text-muted-foreground whitespace-pre-wrap">
-          {question.answer}
-        </div>
-      )}
-    </GlassCard>
+        
+        {showCompiler && currentUser && (
+          <div className="mt-4">
+            <CodeEditor 
+              language={language}
+              question={question.question}
+              height="350px"
+            />
+          </div>
+        )}
+        
+        {showAnswer && currentUser && (
+          <div className="rounded-md bg-background/70 border border-border/70 p-4 text-sm text-muted-foreground whitespace-pre-wrap">
+            {question.answer}
+          </div>
+        )}
+      </GlassCard>
+      <AuthModal 
+        open={authModalOpen} 
+        onOpenChange={setAuthModalOpen}
+        defaultMode={authMode}
+      />
+    </>
   );
 };
 

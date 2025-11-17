@@ -113,37 +113,53 @@ const Blog = () => {
 
 const BlogCard = ({ post, compact }: { post: BlogPost; compact?: boolean }) => {
   return (
-    <GlassCard className="group hover:border-primary/50">
-      <div className={compact ? "flex gap-6" : "space-y-4"}>
-        {!compact && (
-          <div className="h-48 bg-gradient-subtle rounded-lg flex items-center justify-center">
-            <div className="text-6xl">📝</div>
-          </div>
-        )}
-        <div className="flex-1 space-y-3">
-          <Badge className="bg-primary w-fit">{post.category}</Badge>
-          <h3 className="text-2xl font-bold group-hover:text-primary transition">{post.title}</h3>
-          <p className="text-muted-foreground">{post.excerpt}</p>
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <div className="flex items-center gap-4">
-              {post.date && <span>{post.date}</span>}
-              {post.readTime && (
-                <span className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" /> {post.readTime}
+    <GlassCard className="group hover:border-primary/50 hover:shadow-glow-primary transition-all duration-300 cursor-pointer">
+      <a
+        href={post.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block"
+        onClick={(e) => {
+          if (!post.url) e.preventDefault();
+        }}
+      >
+        <div className={compact ? "flex gap-6" : "space-y-4"}>
+          {!compact && (
+            <div className="h-48 bg-gradient-subtle rounded-lg flex items-center justify-center overflow-hidden relative">
+              <div className="text-6xl">📝</div>
+              <div className="absolute inset-0 bg-gradient-to-t from-background/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          )}
+          <div className="flex-1 space-y-3">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-primary w-fit">{post.category}</Badge>
+              {post.featured && (
+                <Badge variant="secondary" className="text-xs">
+                  Featured
+                </Badge>
+              )}
+            </div>
+            <h3 className="text-2xl font-bold group-hover:text-primary transition-colors">{post.title}</h3>
+            <p className="text-muted-foreground line-clamp-2">{post.excerpt}</p>
+            <div className="flex items-center justify-between text-sm text-muted-foreground pt-2">
+              <div className="flex items-center gap-4">
+                {post.date && <span>{post.date}</span>}
+                {post.readTime && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-4 w-4" /> {post.readTime}
+                  </span>
+                )}
+              </div>
+              {post.url && (
+                <span className="flex items-center gap-2 text-primary group-hover:gap-3 transition-all">
+                  Read More
+                  <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </span>
               )}
             </div>
-            {post.url && (
-              <Button asChild variant="ghost" className="text-primary px-0">
-                <a href={post.url} target="_blank" rel="noreferrer" className="flex items-center gap-2">
-                  Read More
-                  <ArrowRight className="h-4 w-4" />
-                </a>
-              </Button>
-            )}
           </div>
         </div>
-      </div>
+      </a>
     </GlassCard>
   );
 };

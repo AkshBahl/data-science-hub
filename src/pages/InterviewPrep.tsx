@@ -50,10 +50,12 @@ const InterviewPrep = () => {
         setLoading(false);
       },
       (error) => {
-        console.error(error);
+        console.error("Firebase error:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
         toast({
           title: "Unable to load question modules",
-          description: "Please try again later.",
+          description: error.message || "Please check your Firebase security rules allow public read access.",
           variant: "destructive",
         });
         setLoading(false);

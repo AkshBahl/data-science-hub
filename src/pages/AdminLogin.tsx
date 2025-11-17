@@ -117,10 +117,10 @@ const AdminLogin = () => {
           <Button
             variant="ghost"
             className="mt-4 w-full text-primary hover:text-primary/80"
-            onClick={() => navigate("/login")}
+            onClick={() => navigate("/")}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to user login
+            Back to main site
           </Button>
         </GlassCard>
       </div>

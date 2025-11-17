@@ -1,49 +1,79 @@
+import { useEffect, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
-import { Briefcase, LineChart, Users, Lightbulb } from "lucide-react";
+import { Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { useToast } from "@/hooks/use-toast";
+import { Link } from "react-router-dom";
+
+type Service = {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  features: string[];
+  price: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+};
+
+// Icon mapping
+const iconMap: Record<string, any> = {
+  Briefcase,
+  LineChart,
+  Users,
+  Lightbulb,
+  Code,
+  Brain,
+  BookOpen,
+  TrendingUp,
+  Database,
+  BarChart3,
+  Zap,
+  Target,
+};
 
 const Services = () => {
-  const services = [
-    {
-      icon: Briefcase,
-      title: "Freelance Data Science",
-      description: "End-to-end data science solutions tailored to your business needs",
-      features: [
-        "Data analysis and visualization",
-        "Machine learning model development",
-        "Predictive analytics",
-        "Business intelligence dashboards",
-        "Custom algorithm development",
-      ],
-      price: "Starting from ₹50,000",
-    },
-    {
-      icon: LineChart,
-      title: "Consulting Services",
-      description: "Strategic guidance for your data science initiatives",
-      features: [
-        "Data strategy development",
-        "Technology stack selection",
-        "Team building and hiring",
-        "Process optimization",
-        "ROI analysis",
-      ],
-      price: "₹5,000/hour",
-    },
-    {
-      icon: Users,
-      title: "Corporate Training",
-      description: "Upskill your team with customized data science training",
-      features: [
-        "Customized curriculum",
-        "Hands-on workshops",
-        "Real-world case studies",
-        "Certification programs",
-        "Ongoing support",
-      ],
-      price: "Contact for quote",
-    },
-  ];
+  const { toast } = useToast();
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "services"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setServices(
+          snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              icon: data.icon || "Briefcase",
+              title: data.title || "Untitled Service",
+              description: data.description || "",
+              features: Array.isArray(data.features) ? data.features : [],
+              price: data.price || "",
+              ctaLabel: data.ctaLabel || "Get Started",
+              ctaUrl: data.ctaUrl,
+            } as Service;
+          }),
+        );
+        setLoading(false);
+      },
+      (error) => {
+        console.error(error);
+        toast({
+          title: "Unable to load services",
+          description: "Please try again later.",
+          variant: "destructive",
+        });
+        setLoading(false);
+      },
+    );
+
+    return unsubscribe;
+  }, [toast]);
 
   return (
     <div className="min-h-screen py-20">
@@ -61,34 +91,56 @@ const Services = () => {
         </div>
 
         {/* Services Grid */}
-        <div className="grid lg:grid-cols-3 gap-8 mb-16">
-          {services.map((service, index) => {
-            const Icon = service.icon;
-            return (
-              <GlassCard key={index} className="flex flex-col h-full">
-                <div className="inline-flex p-4 bg-gradient-primary rounded-full mb-4 w-fit">
-                  <Icon className="h-8 w-8 text-primary-foreground" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">{service.title}</h3>
-                <p className="text-muted-foreground mb-6">{service.description}</p>
-                <ul className="space-y-2 mb-6 flex-grow">
-                  {service.features.map((feature, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-primary mt-1">✓</span>
-                      <span className="text-muted-foreground">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="border-t border-border pt-4">
-                  <p className="text-lg font-semibold text-primary mb-4">{service.price}</p>
-                  <Button className="w-full bg-gradient-primary hover:shadow-glow-primary">
-                    Get Started
-                  </Button>
-                </div>
-              </GlassCard>
-            );
-          })}
-        </div>
+        {loading ? (
+          <p className="text-center text-muted-foreground">Loading services…</p>
+        ) : services.length === 0 ? (
+          <GlassCard className="text-center py-12 bg-gradient-subtle">
+            <h2 className="text-2xl font-semibold mb-2">No services available</h2>
+            <p className="text-muted-foreground">Services will appear here once added.</p>
+          </GlassCard>
+        ) : (
+          <div className="grid lg:grid-cols-3 gap-8 mb-16">
+            {services.map((service) => {
+              const Icon = iconMap[service.icon] || Briefcase;
+              return (
+                <GlassCard key={service.id} className="flex flex-col h-full">
+                  <div className="inline-flex p-4 bg-gradient-primary rounded-full mb-4 w-fit">
+                    <Icon className="h-8 w-8 text-primary-foreground" />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-3">{service.title}</h3>
+                  <p className="text-muted-foreground mb-6">{service.description}</p>
+                  <ul className="space-y-2 mb-6 flex-grow">
+                    {service.features.map((feature, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <span className="text-primary mt-1">✓</span>
+                        <span className="text-muted-foreground">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-t border-border pt-4">
+                    {service.price && (
+                      <p className="text-lg font-semibold text-primary mb-4">{service.price}</p>
+                    )}
+                    {service.ctaUrl ? (
+                      <Button
+                        asChild
+                        className="w-full bg-gradient-primary hover:shadow-glow-primary"
+                      >
+                        <a href={service.ctaUrl} target="_blank" rel="noopener noreferrer">
+                          {service.ctaLabel || "Get Started"}
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button className="w-full bg-gradient-primary hover:shadow-glow-primary">
+                        {service.ctaLabel || "Get Started"}
+                      </Button>
+                    )}
+                  </div>
+                </GlassCard>
+              );
+            })}
+          </div>
+        )}
 
         {/* Process */}
         <div className="mb-16">
@@ -123,11 +175,15 @@ const Services = () => {
             Let's discuss how data science can drive growth and innovation for your organization
           </p>
           <div className="flex flex-wrap gap-4 justify-center">
-            <Button size="lg" className="bg-gradient-accent hover:shadow-glow-secondary">
+            <Button
+              size="lg"
+              className="bg-gradient-accent hover:shadow-glow-secondary"
+              onClick={() => window.open("https://topmate.io/tushar_mahuri/1086703", "_blank")}
+            >
               Schedule Consultation
             </Button>
-            <Button size="lg" variant="outline" className="border-primary text-primary">
-              View Case Studies
+            <Button size="lg" variant="outline" className="border-primary text-primary" asChild>
+              <Link to="/case-studies">View Case Studies</Link>
             </Button>
           </div>
         </GlassCard>

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Instagram, Linkedin, Github, Mail } from "lucide-react";
+import { Instagram, Linkedin, Github, Mail, Shield } from "lucide-react";
 
 const Footer = () => {
   return (
@@ -15,16 +15,28 @@ const Footer = () => {
               Empowering data scientists through education, mentorship, and practical experience.
             </p>
             <div className="flex space-x-4">
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+              <a 
+                href="https://www.instagram.com/bytes_of_data" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-primary transition-colors"
+                aria-label="Follow us on Instagram"
+              >
                 <Instagram className="h-5 w-5" />
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+              <a 
+                href="https://www.linkedin.com/in/tushar-mahuri-84a3451aa/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-primary transition-colors"
+                aria-label="Connect on LinkedIn"
+              >
                 <Linkedin className="h-5 w-5" />
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="#" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Visit our GitHub">
                 <Github className="h-5 w-5" />
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="#" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Send us an email">
                 <Mail className="h-5 w-5" />
               </a>
             </div>
@@ -69,8 +81,34 @@ const Footer = () => {
           </div>
         </div>
 
-        <div className="border-t border-border mt-8 pt-8 text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} bytes_of_data. All rights reserved.</p>
+        <div className="border-t border-border mt-8 pt-8">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+              <p>&copy; {new Date().getFullYear()} bytes_of_data. All rights reserved.</p>
+              <div className="flex items-center gap-4">
+                <Link
+                  to="/privacy-policy"
+                  className="hover:text-primary transition-colors"
+                >
+                  Privacy Policy
+                </Link>
+                <span>•</span>
+                <Link
+                  to="/terms-and-conditions"
+                  className="hover:text-primary transition-colors"
+                >
+                  Terms & Conditions
+                </Link>
+              </div>
+            </div>
+            <Link
+              to="/admin/login"
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors"
+            >
+              <Shield className="h-4 w-4" />
+              <span>Admin Access</span>
+            </Link>
+          </div>
         </div>
       </div>
     </footer>

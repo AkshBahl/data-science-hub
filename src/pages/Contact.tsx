@@ -198,14 +198,20 @@ const Contact = () => {
                   <h3 className="font-semibold mb-3">Social Media</h3>
                   <div className="flex gap-4">
                     <a
-                      href="#"
+                      href="https://www.instagram.com/bytes_of_data"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="p-2 bg-background rounded-lg hover:bg-primary/20 transition-colors"
+                      aria-label="Follow us on Instagram"
                     >
                       <Instagram className="h-6 w-6" />
                     </a>
                     <a
-                      href="#"
+                      href="https://www.linkedin.com/in/tushar-mahuri-84a3451aa/"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="p-2 bg-background rounded-lg hover:bg-primary/20 transition-colors"
+                      aria-label="Connect on LinkedIn"
                     >
                       <Linkedin className="h-6 w-6" />
                     </a>

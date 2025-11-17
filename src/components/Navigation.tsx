@@ -19,7 +19,7 @@ const Navigation = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const isAuthPage = ["/login", "/signup", "/admin/login"].includes(location.pathname);
+  const isAuthPage = ["/admin/login"].includes(location.pathname);
   const isAdminPage = location.pathname.startsWith("/admin");
   const hideNavLinks = isAuthPage || isAdminPage;
 
@@ -118,17 +118,6 @@ const Navigation = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : !hideNavLinks ? (
-              <>
-                <Button
-                  variant="ghost"
-                  onClick={() => navigate("/login")}
-                  className="text-foreground/80 hover:text-primary"
-                >
-                  Sign In
-                </Button>
-                <Button onClick={() => navigate("/signup")}>Sign Up</Button>
-              </>
             ) : null}
           </div>
 
@@ -175,7 +164,7 @@ const Navigation = () => {
                     </div>
                   ) : null}
                 </div>
-                {currentUser ? (
+                {currentUser && (
                   <Button
                     variant="outline"
                     className="w-full"
@@ -184,28 +173,6 @@ const Navigation = () => {
                     <LogOut className="mr-2 h-4 w-4" />
                     Log out
                   </Button>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        navigate("/login");
-                        setIsMenuOpen(false);
-                      }}
-                    >
-                      Sign In
-                    </Button>
-                    <Button
-                      className="w-full"
-                      onClick={() => {
-                        navigate("/signup");
-                        setIsMenuOpen(false);
-                      }}
-                    >
-                      Sign Up
-                    </Button>
-                  </>
                 )}
               </div>
             </div>
