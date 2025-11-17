@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
+import { ThemeToggle } from "./ThemeToggle";
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -41,8 +42,9 @@ const Navigation = () => {
             ))}
           </div>
 
-          {/* CTA Button */}
+          {/* CTA Button & Theme Toggle */}
           <div className="hidden lg:flex items-center space-x-4">
+            <ThemeToggle />
             <Button className="bg-gradient-primary hover:shadow-glow-primary transition-all">
               Get Started
             </Button>
@@ -77,9 +79,12 @@ const Navigation = () => {
                   </Button>
                 </Link>
               ))}
-              <Button className="w-full bg-gradient-primary hover:shadow-glow-primary transition-all mt-4">
-                Get Started
-              </Button>
+              <div className="flex items-center justify-between mt-4">
+                <ThemeToggle />
+                <Button className="flex-1 ml-4 bg-gradient-primary hover:shadow-glow-primary transition-all">
+                  Get Started
+                </Button>
+              </div>
             </div>
           </div>
         )}
