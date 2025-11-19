@@ -32,8 +32,18 @@ const AdminLogin = () => {
     setIsLoading(true);
     setError("");
 
+    // Trim email and password to avoid whitespace issues
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("Please enter both email and password.");
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const user = await login(email, password);
+      const user = await login(trimmedEmail, trimmedPassword);
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const isAdmin = userDoc.exists() ? userDoc.data().isAdmin : false;
       if (!isAdmin) {
@@ -44,7 +54,47 @@ const AdminLogin = () => {
         navigate(redirectPath, { replace: true });
       }
     } catch (err: any) {
-      setError(err.message || "Failed to log in. Please try again.");
+      console.error("Login error:", err);
+      // Get user-friendly error message
+      let errorMessage = "Failed to log in. Please try again.";
+      
+      // Check for Firebase error code
+      const errorCode = err?.code || err?.error?.code;
+      
+      if (errorCode) {
+        switch (errorCode) {
+          case "auth/user-not-found":
+            errorMessage = "No account found with this email address.";
+            break;
+          case "auth/wrong-password":
+            errorMessage = "Incorrect password. Please try again.";
+            break;
+          case "auth/invalid-credential":
+            errorMessage = "Invalid email or password. Please check your credentials and try again.";
+            break;
+          case "auth/invalid-email":
+            errorMessage = "Invalid email address format.";
+            break;
+          case "auth/user-disabled":
+            errorMessage = "This account has been disabled.";
+            break;
+          case "auth/too-many-requests":
+            errorMessage = "Too many failed attempts. Please try again later.";
+            break;
+          case "auth/operation-not-allowed":
+            errorMessage = "Email/password authentication is not enabled. Please contact support.";
+            break;
+          case "auth/network-request-failed":
+            errorMessage = "Network error. Please check your connection and try again.";
+            break;
+          default:
+            errorMessage = err?.message || err?.error?.message || "Failed to log in. Please check your credentials and try again.";
+        }
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

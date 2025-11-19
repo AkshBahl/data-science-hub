@@ -60,8 +60,8 @@ const Navigation = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-2">
-            <div className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+          <Link to="/" className="flex items-center space-x-2 group">
+            <div className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent group-hover:animate-pulse-glow transition-all">
               bytes_of_data
             </div>
           </Link>
@@ -69,13 +69,24 @@ const Navigation = () => {
           {/* Desktop Navigation */}
           {!hideNavLinks && (
             <div className="hidden lg:flex items-center space-x-1">
-              {navLinks.map((link) => (
-                <Link key={link.to} to={link.to}>
-                  <Button variant="ghost" className="text-foreground/80 hover:text-primary transition-colors">
-                    {link.label}
-                  </Button>
-                </Link>
-              ))}
+              {navLinks.map((link) => {
+                const isActive = location.pathname === link.to;
+                return (
+                  <Link key={link.to} to={link.to}>
+                    <Button 
+                      variant="ghost" 
+                      className={`relative text-foreground/80 hover:text-primary transition-all duration-300 ${
+                        isActive ? 'text-primary' : ''
+                      }`}
+                    >
+                      {link.label}
+                      {isActive && (
+                        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-primary animate-fade-in" />
+                      )}
+                    </Button>
+                  </Link>
+                );
+              })}
             </div>
           )}
 

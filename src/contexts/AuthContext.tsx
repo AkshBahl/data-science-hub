@@ -25,12 +25,15 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   setUserPaidStatus: (userId: string, isPaid: boolean) => Promise<void>;
+  updateProfile: (userId: string, data: { displayName?: string; linkedinUrl?: string }) => Promise<void>;
 }
 
 interface UserProfile {
   displayName?: string | null;
   email?: string | null;
   isPaid: boolean;
+  xp?: number; // Experience points
+  linkedinUrl?: string; // LinkedIn profile URL
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -68,6 +71,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return "No account found with this email address.";
       case "auth/wrong-password":
         return "Incorrect password. Please try again.";
+      case "auth/invalid-credential":
+        return "Invalid email or password. Please check your credentials and try again.";
       case "auth/too-many-requests":
         return "Too many failed attempts. Please try again later.";
       case "auth/popup-closed-by-user":
@@ -100,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         displayName: user.displayName ?? "",
         email: user.email ?? "",
         isPaid: false,
+        xp: 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -229,6 +235,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateProfile = async (userId: string, data: { displayName?: string; linkedinUrl?: string }) => {
+    try {
+      const updateData: any = {
+        updatedAt: serverTimestamp(),
+      };
+      if (data.displayName !== undefined) {
+        updateData.displayName = data.displayName;
+      }
+      if (data.linkedinUrl !== undefined) {
+        updateData.linkedinUrl = data.linkedinUrl || null;
+      }
+      await setDoc(
+        doc(db, "users", userId),
+        updateData,
+        { merge: true },
+      );
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been successfully updated.",
+      });
+    } catch (error: any) {
+      const errorMessage = getErrorMessage(error);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -266,6 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loginWithGoogle,
     resetPassword,
     setUserPaidStatus,
+    updateProfile,
   };
 
   return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;

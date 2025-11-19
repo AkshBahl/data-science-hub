@@ -11,6 +11,7 @@ import {
   Sparkles,
   Award,
   Target,
+  ArrowRight,
 } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
 
@@ -101,12 +102,25 @@ const Home = () => {
 
             <div className="flex flex-wrap gap-4 justify-center">
               <Link to="/interview-prep">
-                <Button size="lg" className="bg-gradient-primary hover:shadow-glow-primary text-lg px-8">
-                  Start Interview Prep
+                <Button 
+                  size="lg" 
+                  className="bg-gradient-primary hover:shadow-glow-primary text-lg px-8 relative overflow-hidden group animate-fade-up"
+                  style={{ animationDelay: "0.2s" }}
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    Start Interview Prep
+                    <Sparkles className="h-4 w-4 group-hover:animate-spin" />
+                  </span>
+                  <span className="absolute inset-0 bg-gradient-to-r from-primary via-secondary to-primary bg-[length:200%_100%] animate-gradient opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                 </Button>
               </Link>
               <Link to="/mentorship">
-                <Button size="lg" variant="outline" className="border-primary text-primary hover:bg-primary/10 text-lg px-8">
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="border-primary text-primary hover:bg-primary/10 text-lg px-8 hover-scale hover-glow animate-fade-up"
+                  style={{ animationDelay: "0.3s" }}
+                >
                   Book Free Call
                 </Button>
               </Link>
@@ -115,11 +129,16 @@ const Home = () => {
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-16">
               {stats.map((stat, index) => (
-                <GlassCard key={index} className="text-center" hover={false}>
-                  <div className="text-3xl md:text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                <GlassCard 
+                  key={index} 
+                  className="text-center hover-scale animate-scale-in" 
+                  hover={true}
+                  style={{ animationDelay: `${0.4 + index * 0.1}s` }}
+                >
+                  <div className="text-3xl md:text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent animate-pulse-glow">
                     {stat.number}
                   </div>
-                  <div className="text-sm text-muted-foreground mt-1">{stat.label}</div>
+                  <div className="text-sm text-muted-foreground mt-1 group-hover:text-foreground transition-colors">{stat.label}</div>
                 </GlassCard>
               ))}
             </div>
@@ -147,18 +166,24 @@ const Home = () => {
             {services.map((service, index) => {
               const Icon = service.icon;
               return (
-                <Link key={index} to={service.link}>
-                  <GlassCard className="h-full group cursor-pointer">
+                <Link 
+                  key={index} 
+                  to={service.link}
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                  <GlassCard className="h-full group cursor-pointer shine-effect">
                     <div className="flex items-start space-x-4">
-                      <div className="p-3 bg-gradient-primary rounded-lg group-hover:shadow-glow-primary transition-all">
-                        <Icon className="h-6 w-6 text-primary-foreground" />
+                      <div className="p-3 bg-gradient-primary rounded-lg group-hover:shadow-glow-primary transition-all group-hover:scale-110 group-hover:rotate-3">
+                        <Icon className="h-6 w-6 text-primary-foreground group-hover:animate-pulse" />
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold mb-2 group-hover:text-primary transition-colors">
+                        <h3 className="text-xl font-semibold mb-2 group-hover:text-primary transition-colors gradient-text-primary group-hover:gradient-text-primary">
                           {service.title}
                         </h3>
-                        <p className="text-muted-foreground">{service.description}</p>
+                        <p className="text-muted-foreground group-hover:text-foreground/80 transition-colors">{service.description}</p>
                       </div>
+                      <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all opacity-0 group-hover:opacity-100" />
                     </div>
                   </GlassCard>
                 </Link>

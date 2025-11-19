@@ -21,8 +21,11 @@ import NotFound from "./pages/NotFound";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import InterviewModule from "./pages/InterviewModule";
+import QuestionDetail from "./pages/QuestionDetail";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
+import Profile from "./pages/Profile";
+import Leaderboard from "./pages/Leaderboard";
 import { AdminRoute } from "./components/AdminRoute";
 
 const queryClient = new QueryClient();
@@ -55,6 +58,9 @@ const App = () => (
                         <Route path="/" element={<Home />} />
                         <Route path="/interview-prep" element={<InterviewPrep />} />
                         <Route path="/interview-prep/module/:moduleSlug" element={<InterviewModule />} />
+                        <Route path="/interview-prep/question/:questionId" element={<QuestionDetail />} />
+                        <Route path="/profile" element={<Profile />} />
+                        <Route path="/leaderboard" element={<Leaderboard />} />
                         <Route path="/mentorship" element={<Mentorship />} />
                         <Route path="/services" element={<Services />} />
                         <Route path="/courses" element={<Courses />} />

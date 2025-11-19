@@ -47,11 +47,19 @@ service cloud.firestore {
     
     // Users collection - only authenticated users can read their own data
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // Allow public read access for leaderboard (limited fields)
+      allow read: if true; // Public read for leaderboard display
       allow write: if request.auth != null && request.auth.uid == userId;
       // Admins can read/write any user
       allow read, write: if request.auth != null && 
                            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    // Allow public read access to user question submissions for status tracking
+    match /userQuestionSubmissions/{submissionId} {
+      allow read: if true; // Public read for checking completion status
+      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
   }
 }
@@ -68,7 +76,11 @@ service cloud.firestore {
 
 2. **Admin Write Access**: Only authenticated admin users can write to these collections.
 
-3. **User Data Protection**: Users can only read/write their own user document, and admins can access any user document.
+3. **User Data Protection**: 
+   - Users can read any user document (for leaderboard purposes)
+   - Users can only write their own user document
+   - Admins can read/write any user document
+   - User question submissions are publicly readable but only writable by the owner
 
 ## How to Update:
 

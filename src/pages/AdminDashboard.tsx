@@ -4,6 +4,7 @@ import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck, Loader2, Layers, Menu } from "lucide-react";
+import CompanyLogo from "@/components/CompanyLogo";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ import { cn } from "@/lib/utils";
 type InterviewQuestion = {
   id: string;
   title?: string;
+  questionTitle?: string; // Question title (e.g., "Histogram of Tweets")
   topic?: string;
   question: string;
   answer: string;
@@ -51,6 +53,7 @@ type InterviewQuestion = {
   expectedOutput?: string; // Expected output for validation
   difficulty?: "easy" | "medium" | "hard";
   company?: string;
+  questionOfTheWeek?: boolean; // Mark as Question of the Week
 };
 
 type ManagedUser = {
@@ -126,6 +129,7 @@ const AdminDashboard = () => {
   const [editingQuestion, setEditingQuestion] = useState<InterviewQuestion | null>(null);
   const [questionForm, setQuestionForm] = useState({
     title: "",
+    questionTitle: "",
     topic: "",
     question: "",
     answer: "",
@@ -133,6 +137,7 @@ const AdminDashboard = () => {
     expectedOutput: "",
     difficulty: "" as "" | "easy" | "medium" | "hard",
     company: "",
+    questionOfTheWeek: false,
   });
   const [userSearch, setUserSearch] = useState("");
   const [questionSearch, setQuestionSearch] = useState("");
@@ -335,7 +340,7 @@ const AdminDashboard = () => {
 
   const openCreateDialog = () => {
     setEditingQuestion(null);
-    setQuestionForm({ title: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "" });
+    setQuestionForm({ title: "", questionTitle: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "", questionOfTheWeek: false });
     setTitleSearchOpen(false);
     setIsDialogOpen(true);
   };
@@ -344,6 +349,7 @@ const AdminDashboard = () => {
     setEditingQuestion(question);
     setQuestionForm({
       title: question.title ?? "",
+      questionTitle: question.questionTitle ?? "",
       topic: question.topic ?? "",
       question: question.question,
       answer: question.answer,
@@ -351,6 +357,7 @@ const AdminDashboard = () => {
       expectedOutput: question.expectedOutput ?? "",
       difficulty: question.difficulty ?? "",
       company: question.company ?? "",
+      questionOfTheWeek: question.questionOfTheWeek ?? false,
     });
     setTitleSearchOpen(false);
     setIsDialogOpen(true);
@@ -380,6 +387,9 @@ const AdminDashboard = () => {
       };
 
       // Only include optional fields if they have values
+      if (questionForm.questionTitle.trim()) {
+        questionData.questionTitle = questionForm.questionTitle.trim();
+      }
       if (questionForm.difficulty) {
         questionData.difficulty = questionForm.difficulty;
       }
@@ -388,6 +398,11 @@ const AdminDashboard = () => {
       }
       if (questionForm.expectedOutput.trim()) {
         questionData.expectedOutput = questionForm.expectedOutput.trim();
+      }
+      if (questionForm.questionOfTheWeek) {
+        questionData.questionOfTheWeek = true;
+      } else {
+        questionData.questionOfTheWeek = false;
       }
 
       // Remove undefined values (Firestore doesn't accept undefined)
@@ -1089,6 +1104,18 @@ const AdminDashboard = () => {
                 </p>
               </div>
               <div className="space-y-2">
+                <Label htmlFor="questionTitle">Question Title</Label>
+                <Input
+                  id="questionTitle"
+                  placeholder="e.g., Histogram of Tweets, Data Science Skills"
+                  value={questionForm.questionTitle}
+                  onChange={(e) => setQuestionForm((prev) => ({ ...prev, questionTitle: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  A short, descriptive title for this specific question (shown in the question list).
+                </p>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="question">Question</Label>
                 <Textarea
                   id="question"
@@ -1247,7 +1274,7 @@ const AdminDashboard = () => {
                           )}
                           {question.company && (
                             <Badge variant="secondary" className="text-xs gap-1">
-                              <Briefcase className="h-3 w-3" />
+                              <CompanyLogo companyName={question.company} size={12} className="flex-shrink-0" />
                               {question.company}
                             </Badge>
                           )}

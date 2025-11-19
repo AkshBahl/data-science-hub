@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
-import { Play, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { db as firestoreDb } from "@/lib/firebase";
+import { doc, getDoc, setDoc, serverTimestamp, increment } from "firebase/firestore";
 import initSqlJs, { Database } from "sql.js";
+import { executeCode, isJudge0Configured, getSupportedLanguages } from "@/services/codeExecution";
 import "@/lib/monaco-config";
 
 interface CodeEditorProps {
@@ -11,10 +15,16 @@ interface CodeEditorProps {
   defaultValue?: string;
   height?: string;
   question?: string;
+  questionId?: string; // Question ID for tracking completion
   expectedOutput?: string; // Expected output for validation
+  hideOutput?: boolean; // Hide output section (for separate display)
+  onOutputChange?: (output: { columns: string[]; values: any[][] } | null, textOutput: string | null) => void; // Callback for output changes
+  onValidationChange?: (result: { passed: boolean; message?: string } | null) => void; // Callback for validation changes
 }
 
-const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, expectedOutput }: CodeEditorProps) => {
+const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, questionId, expectedOutput, hideOutput = false, onOutputChange, onValidationChange }: CodeEditorProps) => {
+  const { currentUser } = useAuth();
+  const [hasAwardedXP, setHasAwardedXP] = useState(false);
   // Get comment syntax based on language
   const getCommentPrefix = (lang: string): string => {
     if (lang === "python") return "#";
@@ -78,6 +88,64 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const [textOutput, setTextOutput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [validationResult, setValidationResult] = useState<{ passed: boolean; message?: string } | null>(null);
+  const { toast: toastHook } = useToast();
+
+  // Reset hasAwardedXP when questionId changes
+  useEffect(() => {
+    setHasAwardedXP(false);
+  }, [questionId]);
+
+  // Notify parent of output changes
+  useEffect(() => {
+    if (onOutputChange) {
+      onOutputChange(output, textOutput);
+    }
+  }, [output, textOutput, onOutputChange]);
+
+  // Notify parent of validation changes
+  useEffect(() => {
+    if (onValidationChange) {
+      onValidationChange(validationResult);
+    }
+  }, [validationResult, onValidationChange]);
+
+  // Function to track question completion and award XP
+  const trackQuestionCompletion = async (questionId: string) => {
+    if (!currentUser || !questionId || hasAwardedXP) return;
+
+    try {
+      // Check if already completed
+      const submissionRef = doc(firestoreDb, "userQuestionSubmissions", `${currentUser.uid}_${questionId}`);
+      const submissionSnap = await getDoc(submissionRef);
+
+      if (submissionSnap.exists() && submissionSnap.data().status === "completed") {
+        return; // Already completed
+      }
+
+      // Mark as completed
+      await setDoc(submissionRef, {
+        userId: currentUser.uid,
+        questionId: questionId,
+        status: "completed",
+        completedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Award XP (25 points per question)
+      const userRef = doc(firestoreDb, "users", currentUser.uid);
+      await setDoc(userRef, {
+        xp: increment(25),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      setHasAwardedXP(true);
+      toastHook({
+        title: "🎉 Question Completed!",
+        description: "You earned 25 XP!",
+      });
+    } catch (error) {
+      console.error("Error tracking completion:", error);
+    }
+  };
   const [sqlJs, setSqlJs] = useState<any>(null);
   const [db, setDb] = useState<Database | null>(null);
   const [pyodide, setPyodide] = useState<any>(null);
@@ -309,6 +377,113 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     };
   }, [language, toast]);
 
+  // Helper function to extract executable code (remove comments)
+  const extractExecutableCode = (code: string, lang: string): string => {
+    if (lang === "sql") {
+      // For SQL, remove single-line comments (-- and #)
+      return code
+        .split('\n')
+        .map(line => {
+          // Remove -- comments
+          const dashIndex = line.indexOf('--');
+          if (dashIndex !== -1) {
+            line = line.substring(0, dashIndex);
+          }
+          // Remove # comments (if not in string)
+          const hashIndex = line.indexOf('#');
+          if (hashIndex !== -1) {
+            // Simple check: if line doesn't contain quotes, safe to remove
+            const beforeHash = line.substring(0, hashIndex);
+            if (!beforeHash.includes("'") && !beforeHash.includes('"')) {
+              line = line.substring(0, hashIndex);
+            }
+          }
+          return line.trim();
+        })
+        .filter(line => line.length > 0 && !line.startsWith('--') && !line.startsWith('#'))
+        .join('\n')
+        .trim();
+    } else if (lang === "python") {
+      // For Python, remove # comments but preserve strings
+      const lines = code.split('\n');
+      const processedLines: string[] = [];
+      let inMultiLineString = false;
+      let stringChar = '';
+      
+      for (const line of lines) {
+        let processedLine = line;
+        let inString = false;
+        let currentStringChar = '';
+        
+        // Process character by character to handle strings properly
+        let result = '';
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+          
+          if (!inString && (char === '"' || char === "'")) {
+            // Check for triple quotes
+            if (nextChar === char && line[i + 2] === char) {
+              inMultiLineString = !inMultiLineString;
+              stringChar = char;
+              result += char + char + char;
+              i += 2;
+              continue;
+            }
+            inString = true;
+            currentStringChar = char;
+            result += char;
+          } else if (inString && char === currentStringChar) {
+            inString = false;
+            currentStringChar = '';
+            result += char;
+          } else if (!inString && !inMultiLineString && char === '#') {
+            // Found comment, stop processing this line
+            break;
+          } else {
+            result += char;
+          }
+        }
+        
+        processedLine = result.trimEnd();
+        
+        // Skip lines that are only comments or empty
+        if (processedLine && !processedLine.trim().startsWith('#')) {
+          processedLines.push(processedLine);
+        }
+      }
+      
+      return processedLines.join('\n').trim();
+    } else if (lang === "javascript" || lang === "typescript") {
+      // For JS/TS, remove // and /* */ comments
+      let result = code;
+      // Remove /* */ comments (but not inside strings)
+      result = result.replace(/\/\*[\s\S]*?\*\//g, '');
+      // Remove // comments
+      return result
+        .split('\n')
+        .map(line => {
+          const slashIndex = line.indexOf('//');
+          if (slashIndex !== -1) {
+            // Check if // is inside a string
+            const beforeSlash = line.substring(0, slashIndex);
+            const singleQuotes = (beforeSlash.match(/'/g) || []).length;
+            const doubleQuotes = (beforeSlash.match(/"/g) || []).length;
+            const backticks = (beforeSlash.match(/`/g) || []).length;
+            if (singleQuotes % 2 === 0 && doubleQuotes % 2 === 0 && backticks % 2 === 0) {
+              return line.substring(0, slashIndex).trimEnd();
+            }
+          }
+          return line;
+        })
+        .filter(line => line.trim().length > 0 && !line.trim().startsWith('//'))
+        .join('\n')
+        .trim();
+    }
+    // For other languages, return as-is
+    return code.trim();
+  };
+
   const handleRun = async () => {
     if (!code.trim()) {
       toast({
@@ -324,6 +499,19 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     setTextOutput(null);
     setValidationResult(null);
 
+    // Extract executable code (remove comments)
+    const executableCode = extractExecutableCode(code, language);
+
+    if (!executableCode) {
+      toast({
+        title: "No executable code",
+        description: "Please write some code to execute (comments are ignored).",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       if (language === "sql") {
         if (!db) {
@@ -337,7 +525,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         }
 
         // Split by semicolons to handle multiple queries
-        const queries = code.split(";").filter((q) => q.trim());
+        const queries = executableCode.split(";").filter((q) => q.trim());
         
         if (queries.length === 0) {
           toast({
@@ -370,6 +558,10 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
                   title: "✓ Solution Correct!",
                   description: validation.message || "Your output matches the expected result.",
                 });
+                // Track completion and award XP
+                if (questionId) {
+                  trackQuestionCompletion(questionId);
+                }
               } else {
                 toast({
                   title: "Solution Incorrect",
@@ -423,8 +615,8 @@ sys.stdout = StringIO()
 `);
 
         try {
-          // Execute Python code
-          pyodide.runPython(code);
+          // Execute Python code (only executable code, comments removed)
+          pyodide.runPython(executableCode);
           outputText = pyodide.runPython("sys.stdout.getvalue()");
         } catch (error: any) {
           outputText = `Error: ${error.message || String(error)}`;
@@ -442,6 +634,10 @@ sys.stdout = StringIO()
               title: "✓ Solution Correct!",
               description: validation.message || "Your output matches the expected result.",
             });
+            // Track completion and award XP
+            if (questionId) {
+              trackQuestionCompletion(questionId);
+            }
           } else {
             toast({
               title: "Solution Incorrect",
@@ -479,8 +675,8 @@ sys.stdout = StringIO()
             originalWarn.apply(console, args);
           };
 
-          // Execute code in a safe context
-          const result = new Function(code)();
+          // Execute code in a safe context (only executable code, comments removed)
+          const result = new Function(executableCode)();
           
           // Restore console
           console.log = originalLog;
@@ -550,7 +746,13 @@ sys.stdout = StringIO()
           };
 
           // Execute as JavaScript (TypeScript syntax is mostly compatible)
-          const result = new Function(code)();
+          // Remove TypeScript-specific syntax for execution
+          let jsCode = executableCode
+            .replace(/:\s*\w+(\[\])?/g, '') // Remove type annotations
+            .replace(/interface\s+\w+\s*\{[^}]*\}/g, '') // Remove interfaces
+            .replace(/type\s+\w+\s*=.*?;/g, ''); // Remove type aliases
+          
+          const result = new Function(jsCode)();
           
           // Restore console
           console.log = originalLog;
@@ -596,16 +798,86 @@ sys.stdout = StringIO()
           });
         }
       } else {
-        // For other languages (Java, C++, C#, Go, Rust, etc.), provide syntax highlighting only
-        setTextOutput(
-          `Code execution for ${language.toUpperCase()} is not yet available in the browser.\n\n` +
-          `Your code:\n${'='.repeat(50)}\n${code}\n${'='.repeat(50)}\n\n` +
-          `Note: Syntax highlighting is available. For execution, please use an external compiler or IDE.`
-        );
-        toast({
-          title: "Execution not available",
-          description: `${language.toUpperCase()} execution requires a compiler. Syntax highlighting is available.`,
-        });
+        // For other languages (Java, C++, C#, Go, Rust, etc.), use Piston API (FREE) or Judge0 API
+        // Piston API is FREE and works by default - no configuration needed!
+
+        // Check if language is supported by Judge0
+        const supportedLanguages = getSupportedLanguages();
+        if (!supportedLanguages.includes(language.toLowerCase())) {
+          setTextOutput(
+            `Language ${language.toUpperCase()} is not currently supported.\n\n` +
+            `Supported languages: ${supportedLanguages.join(', ')}`
+          );
+          toast({
+            title: "Language not supported",
+            description: `Please use one of the supported languages.`,
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        try {
+          // Execute code using Judge0
+          const result = await executeCode(executableCode, language);
+          
+          let outputText = result.output || '';
+          if (result.error) {
+            outputText = outputText ? `${outputText}\n\nError:\n${result.error}` : `Error:\n${result.error}`;
+          }
+          
+          if (result.time) {
+            outputText += `\n\nExecution time: ${result.time}s`;
+          }
+          if (result.memory) {
+            outputText += `\nMemory used: ${(result.memory / 1024).toFixed(2)} KB`;
+          }
+          
+          const finalOutput = outputText || "(No output)";
+          setTextOutput(finalOutput);
+          
+          // Validate output if expectedOutput is provided
+          if (expectedOutput) {
+            const validation = compareOutputs(finalOutput, expectedOutput);
+            setValidationResult(validation);
+            if (validation.passed) {
+              toast({
+                title: "✓ Solution Correct!",
+                description: validation.message || "Your output matches the expected result.",
+              });
+              // Track completion and award XP
+              if (questionId) {
+                trackQuestionCompletion(questionId);
+              }
+            } else {
+              toast({
+                title: "Solution Incorrect",
+                description: validation.message || "Your output doesn't match the expected result.",
+                variant: "destructive",
+              });
+            }
+          } else {
+            if (result.error) {
+              toast({
+                title: result.error.includes("Compilation") ? "Compilation Error" : "Execution Error",
+                description: result.error,
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: "Code executed successfully",
+                description: result.time ? `Execution time: ${result.time}s` : "Check the output below.",
+              });
+            }
+          }
+        } catch (error: any) {
+          setTextOutput(`Error: ${error.message || String(error)}\n\nPlease check your Judge0 API configuration.`);
+          toast({
+            title: "Execution Error",
+            description: error.message || "An error occurred while executing the code.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (error: any) {
       console.error("Execution error:", error);
@@ -622,17 +894,22 @@ sys.stdout = StringIO()
   };
 
   return (
-    <div className="space-y-3 p-1 sm:p-2">
-      <div className="border border-border rounded-lg overflow-hidden bg-background/50">
-        <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-muted/30 border-b border-border gap-2">
-          <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            {language.toUpperCase()} Editor
-          </span>
+    <div className={hideOutput ? "h-full flex flex-col" : "space-y-4"}>
+      <div className={`border-2 border-border/50 rounded-xl overflow-hidden bg-background/60 shadow-lg ${hideOutput ? "flex-1 flex flex-col min-h-0" : ""}`}>
+        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-muted/40 to-muted/20 border-b border-border/50 gap-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-md bg-primary/10 border border-primary/20">
+              <Code2 className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <span className="text-sm font-semibold text-foreground">
+              {language.toUpperCase()} Editor
+            </span>
+          </div>
           <Button
             onClick={handleRun}
             disabled={loading || (language === "sql" && !db) || (language === "python" && !pyodide)}
             size="sm"
-            className="gap-1 sm:gap-2 text-xs sm:text-sm h-8 sm:h-9"
+            className="gap-2 text-sm h-9 px-4 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-all"
             title={
               language === "sql" && !db
                 ? "Waiting for SQL database to initialize..."
@@ -643,86 +920,99 @@ sys.stdout = StringIO()
           >
             {loading ? (
               <>
-                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
-                <span className="hidden sm:inline">Running...</span>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Running...</span>
               </>
             ) : (
               <>
-                <Play className="h-3 w-3 sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline">Run</span>
+                <Play className="h-4 w-4" />
+                <span>Run Code</span>
               </>
             )}
           </Button>
         </div>
-        <Editor
-          height={height}
-          language={language}
-          value={code}
-          onChange={(value) => setCode(value || "")}
-          theme="vs-dark"
-          loading={<div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 12,
-            lineNumbers: "on",
-            roundedSelection: false,
-            scrollBeyondLastLine: false,
-            readOnly: false,
-            automaticLayout: true,
-            tabSize: 2,
-            wordWrap: "on",
-            scrollbar: {
-              vertical: "auto",
-              horizontal: "auto",
-            },
-          }}
-        />
+        <div className="flex-1 min-h-0">
+          <Editor
+            height={height}
+            language={language}
+            value={code}
+            onChange={(value) => setCode(value || "")}
+            theme="vs-dark"
+            loading={<div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 12,
+              lineNumbers: "on",
+              roundedSelection: false,
+              scrollBeyondLastLine: false,
+              readOnly: false,
+              automaticLayout: true,
+              tabSize: 2,
+              wordWrap: "on",
+              scrollbar: {
+                vertical: "auto",
+                horizontal: "auto",
+              },
+            }}
+          />
+        </div>
       </div>
 
       {validationResult && (
-        <div className={`border rounded-lg overflow-hidden ${
+        <div className={`border-2 rounded-xl overflow-hidden shadow-lg ${
           validationResult.passed 
-            ? "border-green-500/50 bg-green-500/10" 
-            : "border-red-500/50 bg-red-500/10"
+            ? "border-green-500/60 bg-gradient-to-br from-green-500/15 to-green-500/5" 
+            : "border-red-500/60 bg-gradient-to-br from-red-500/15 to-red-500/5"
         }`}>
-          <div className={`px-4 py-3 flex items-center gap-2 ${
+          <div className={`px-5 py-4 flex items-center gap-3 ${
             validationResult.passed 
-              ? "bg-green-500/20" 
-              : "bg-red-500/20"
+              ? "bg-green-500/20 border-b border-green-500/30" 
+              : "bg-red-500/20 border-b border-red-500/30"
           }`}>
             {validationResult.passed ? (
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <div className="p-2 rounded-lg bg-green-500/20 border border-green-500/40">
+                <CheckCircle2 className="h-5 w-5 text-green-400" />
+              </div>
             ) : (
-              <XCircle className="h-5 w-5 text-red-500" />
+              <div className="p-2 rounded-lg bg-red-500/20 border border-red-500/40">
+                <XCircle className="h-5 w-5 text-red-400" />
+              </div>
             )}
-            <span className={`text-sm font-semibold ${
-              validationResult.passed ? "text-green-500" : "text-red-500"
-            }`}>
-              {validationResult.passed ? "Solution Correct!" : "Solution Incorrect"}
-            </span>
-            {validationResult.message && (
-              <span className="text-xs text-muted-foreground ml-2">
-                {validationResult.message}
+            <div className="flex-1">
+              <span className={`text-sm font-bold block ${
+                validationResult.passed ? "text-green-400" : "text-red-400"
+              }`}>
+                {validationResult.passed ? "✓ Solution Correct!" : "✗ Solution Incorrect"}
               </span>
-            )}
+              {validationResult.message && (
+                <span className="text-xs text-muted-foreground mt-1 block">
+                  {validationResult.message}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {(output || textOutput) && (
-        <div className="border border-border rounded-lg overflow-hidden bg-background/50">
-          <div className="px-4 py-2 bg-muted/30 border-b border-border">
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              Output
-            </span>
+      {!hideOutput && (output || textOutput) && (
+        <div className="border-2 border-border/50 rounded-xl overflow-hidden bg-background/60 shadow-lg">
+          <div className="px-4 py-3 bg-gradient-to-r from-muted/40 to-muted/20 border-b border-border/50">
+            <div className="flex items-center gap-2">
+              <div className="p-1 rounded-md bg-primary/10 border border-primary/20">
+                <Terminal className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <span className="text-sm font-semibold text-foreground">
+                Output
+              </span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             {output && output.columns.length > 0 && output.values.length > 0 ? (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-muted/20">
+                  <tr className="border-b-2 border-border/50 bg-muted/30">
                     {output.columns.map((col, idx) => (
-                      <th key={idx} className="px-4 py-2 text-left font-semibold text-foreground">
+                      <th key={idx} className="px-5 py-3 text-left font-bold text-foreground">
                         {col}
                       </th>
                     ))}
@@ -730,9 +1020,9 @@ sys.stdout = StringIO()
                 </thead>
                 <tbody>
                   {output.values.map((row, rowIdx) => (
-                    <tr key={rowIdx} className="border-b border-border/50 hover:bg-muted/10">
+                    <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
                       {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className="px-4 py-2 text-muted-foreground">
+                        <td key={cellIdx} className="px-5 py-3 text-foreground/90">
                           {String(cell)}
                         </td>
                       ))}
@@ -741,13 +1031,13 @@ sys.stdout = StringIO()
                 </tbody>
               </table>
             ) : textOutput ? (
-              <div className="p-4">
-                <pre className="text-sm text-foreground font-mono whitespace-pre-wrap bg-background/50 p-3 rounded border border-border/50">
+              <div className="p-5">
+                <pre className="text-sm text-foreground/90 font-mono whitespace-pre-wrap bg-background/70 p-4 rounded-lg border border-border/50 shadow-inner">
                   {textOutput}
                 </pre>
               </div>
             ) : (
-              <div className="p-4 text-sm text-muted-foreground text-center">
+              <div className="p-5 text-sm text-muted-foreground text-center">
                 No results to display
               </div>
             )}
@@ -756,12 +1046,33 @@ sys.stdout = StringIO()
       )}
 
       {language === "sql" && (
-        <div className="text-xs text-muted-foreground bg-muted/20 p-3 rounded-md">
-          <p className="font-semibold mb-1">Available tables for practice:</p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
-            <li><code className="bg-background/50 px-1 rounded">employees</code> - id, name, department, salary, hire_date</li>
-            <li><code className="bg-background/50 px-1 rounded">products</code> - id, name, category, price, stock</li>
-            <li><code className="bg-background/50 px-1 rounded">orders</code> - id, product_id, employee_id, quantity, order_date</li>
+        <div className="text-sm text-foreground/80 bg-gradient-to-br from-primary/5 to-primary/10 border-2 border-primary/20 p-4 rounded-xl">
+          <p className="font-bold mb-3 text-foreground flex items-center gap-2">
+            <Terminal className="h-4 w-4 text-primary" />
+            Available tables for practice:
+          </p>
+          <ul className="space-y-2 ml-1">
+            <li className="flex items-start gap-2">
+              <span className="text-primary mt-0.5">•</span>
+              <span>
+                <code className="bg-background/60 border border-primary/20 px-2 py-0.5 rounded font-mono text-xs font-semibold text-primary">employees</code>
+                <span className="ml-2 text-muted-foreground">id, name, department, salary, hire_date</span>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-primary mt-0.5">•</span>
+              <span>
+                <code className="bg-background/60 border border-primary/20 px-2 py-0.5 rounded font-mono text-xs font-semibold text-primary">products</code>
+                <span className="ml-2 text-muted-foreground">id, name, category, price, stock</span>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-primary mt-0.5">•</span>
+              <span>
+                <code className="bg-background/60 border border-primary/20 px-2 py-0.5 rounded font-mono text-xs font-semibold text-primary">orders</code>
+                <span className="ml-2 text-muted-foreground">id, product_id, employee_id, quantity, order_date</span>
+              </span>
+            </li>
           </ul>
         </div>
       )}
