@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck } from "lucide-react";
+import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck, Loader2, Layers, Menu } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,10 +17,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   orderBy,
@@ -32,6 +38,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 
 type InterviewQuestion = {
   id: string;
@@ -41,6 +48,9 @@ type InterviewQuestion = {
   answer: string;
   tier: "free" | "paid";
   createdAt?: Date;
+  expectedOutput?: string; // Expected output for validation
+  difficulty?: "easy" | "medium" | "hard";
+  company?: string;
 };
 
 type ManagedUser = {
@@ -106,6 +116,8 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const { setUserPaidStatus, logout } = useAuth();
   const [activeSection, setActiveSection] = useState<AdminSection>("questions");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -118,8 +130,13 @@ const AdminDashboard = () => {
     question: "",
     answer: "",
     tier: "free" as "free" | "paid",
+    expectedOutput: "",
+    difficulty: "" as "" | "easy" | "medium" | "hard",
+    company: "",
   });
   const [userSearch, setUserSearch] = useState("");
+  const [questionSearch, setQuestionSearch] = useState("");
+  const [titleSearchOpen, setTitleSearchOpen] = useState(false);
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
   const [isCaseDialogOpen, setIsCaseDialogOpen] = useState(false);
   const [isSavingCaseStudy, setIsSavingCaseStudy] = useState(false);
@@ -196,6 +213,9 @@ const AdminDashboard = () => {
           answer: data.answer,
           tier: data.tier ?? "free",
           createdAt: data.createdAt?.toDate?.(),
+          expectedOutput: data.expectedOutput,
+          difficulty: data.difficulty,
+          company: data.company,
         } as InterviewQuestion;
       });
       setQuestions(mapped);
@@ -315,7 +335,8 @@ const AdminDashboard = () => {
 
   const openCreateDialog = () => {
     setEditingQuestion(null);
-    setQuestionForm({ title: "", topic: "", question: "", answer: "", tier: "free" });
+    setQuestionForm({ title: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "" });
+    setTitleSearchOpen(false);
     setIsDialogOpen(true);
   };
 
@@ -327,7 +348,11 @@ const AdminDashboard = () => {
       question: question.question,
       answer: question.answer,
       tier: question.tier,
+      expectedOutput: question.expectedOutput ?? "",
+      difficulty: question.difficulty ?? "",
+      company: question.company ?? "",
     });
+    setTitleSearchOpen(false);
     setIsDialogOpen(true);
   };
 
@@ -345,17 +370,42 @@ const AdminDashboard = () => {
 
     setIsSavingQuestion(true);
     try {
+      // Prepare data, filtering out empty strings and undefined values
+      const questionData: any = {
+        title: normalizedTitle,
+        topic: questionForm.topic.trim() || undefined,
+        question: questionForm.question.trim(),
+        answer: questionForm.answer.trim(),
+        tier: questionForm.tier,
+      };
+
+      // Only include optional fields if they have values
+      if (questionForm.difficulty) {
+        questionData.difficulty = questionForm.difficulty;
+      }
+      if (questionForm.company.trim()) {
+        questionData.company = questionForm.company.trim();
+      }
+      if (questionForm.expectedOutput.trim()) {
+        questionData.expectedOutput = questionForm.expectedOutput.trim();
+      }
+
+      // Remove undefined values (Firestore doesn't accept undefined)
+      Object.keys(questionData).forEach(key => {
+        if (questionData[key] === undefined) {
+          delete questionData[key];
+        }
+      });
+
       if (editingQuestion) {
         await updateDoc(doc(db, "interviewQuestions", editingQuestion.id), {
-          ...questionForm,
-          title: normalizedTitle,
+          ...questionData,
           updatedAt: serverTimestamp(),
         });
         toast({ title: "Question updated" });
       } else {
         await addDoc(collection(db, "interviewQuestions"), {
-          ...questionForm,
-          title: normalizedTitle,
+          ...questionData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -396,9 +446,67 @@ const AdminDashboard = () => {
     });
   }, [userSearch, users]);
 
+  // Get unique titles for combobox
+  const uniqueTitles = useMemo(() => {
+    const titles = new Set<string>();
+    questions.forEach((q) => {
+      if (q.title?.trim()) {
+        titles.add(q.title.trim());
+      }
+    });
+    return Array.from(titles).sort();
+  }, [questions]);
+
+  // Filter questions
+  const filteredQuestions = useMemo(() => {
+    if (!questionSearch.trim()) return questions;
+    const term = questionSearch.toLowerCase();
+    return questions.filter((q) => {
+      return (
+        q.title?.toLowerCase().includes(term) ||
+        q.question?.toLowerCase().includes(term) ||
+        q.answer?.toLowerCase().includes(term) ||
+        q.company?.toLowerCase().includes(term) ||
+        q.difficulty?.toLowerCase().includes(term)
+      );
+    });
+  }, [questionSearch, questions]);
+
+  // Question stats
+  const questionStats = useMemo(() => {
+    const free = questions.filter((q) => q.tier === "free").length;
+    const paid = questions.filter((q) => q.tier === "paid").length;
+    const withDifficulty = questions.filter((q) => q.difficulty).length;
+    const withCompany = questions.filter((q) => q.company).length;
+    return { total: questions.length, free, paid, withDifficulty, withCompany };
+  }, [questions]);
+
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [userToUpdate, setUserToUpdate] = useState<ManagedUser | null>(null);
+
   const toggleUserPaidStatus = async (user: ManagedUser) => {
     if (!user.id) return;
-    await setUserPaidStatus(user.id, !user.isPaid);
+    
+    // Set the user to update and open confirmation dialog
+    setUserToUpdate(user);
+    setConfirmDialogOpen(true);
+  };
+
+  const confirmToggleUserPaidStatus = async () => {
+    if (!userToUpdate?.id) return;
+    
+    setUpdatingUserId(userToUpdate.id);
+    try {
+      await setUserPaidStatus(userToUpdate.id, !userToUpdate.isPaid);
+      setConfirmDialogOpen(false);
+      setUserToUpdate(null);
+    } catch (error) {
+      // Error is already handled in setUserPaidStatus
+      console.error("Failed to update user premium status:", error);
+    } finally {
+      setUpdatingUserId(null);
+    }
   };
 
   const openCaseStudyDialog = (study?: CaseStudy) => {
@@ -837,30 +945,148 @@ const AdminDashboard = () => {
 
   // Define render functions before renderContent
   const renderQuestionsSection = () => (
-    <GlassCard className="p-8 space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div></div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Question
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{editingQuestion ? "Edit Question" : "Add Question"}</DialogTitle>
-              <DialogDescription>Provide the prompt, answer, and whether it is free or premium.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <GlassCard className="p-4 border-primary/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Questions</p>
+              <p className="text-2xl font-bold mt-1">{questionStats.total}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-primary/10">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+          </div>
+        </GlassCard>
+        <GlassCard className="p-4 border-green-500/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Free Questions</p>
+              <p className="text-2xl font-bold mt-1 text-green-500">{questionStats.free}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-green-500/10">
+              <Target className="h-5 w-5 text-green-500" />
+            </div>
+          </div>
+        </GlassCard>
+        <GlassCard className="p-4 border-secondary/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Premium Questions</p>
+              <p className="text-2xl font-bold mt-1 text-secondary">{questionStats.paid}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-secondary/10">
+              <Zap className="h-5 w-5 text-secondary" />
+            </div>
+          </div>
+        </GlassCard>
+        <GlassCard className="p-4 border-accent/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Modules</p>
+              <p className="text-2xl font-bold mt-1 text-accent">{uniqueTitles.length}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-accent/10">
+              <Layers className="h-5 w-5 text-accent" />
+            </div>
+          </div>
+        </GlassCard>
+      </div>
+
+      <GlassCard className="p-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex-1 min-w-[250px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search questions by title, content, company, or difficulty..."
+                value={questionSearch}
+                onChange={(e) => setQuestionSearch(e.target.value)}
+                className="pl-10 pr-10"
+              />
+              {questionSearch && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  onClick={() => setQuestionSearch("")}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openCreateDialog} className="bg-gradient-primary hover:shadow-glow-primary">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Question
+              </Button>
+            </DialogTrigger>
+          <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+            <div className="p-6 pb-4 flex-shrink-0 border-b border-border">
+              <DialogHeader>
+                <DialogTitle>{editingQuestion ? "Edit Question" : "Add Question"}</DialogTitle>
+                <DialogDescription>Provide the prompt, answer, and whether it is free or premium.</DialogDescription>
+              </DialogHeader>
+            </div>
+            <div className="space-y-4 overflow-y-auto flex-1 px-6 py-4 custom-scrollbar">
               <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  placeholder="Short title to group similar questions"
-                  value={questionForm.title}
-                  onChange={(e) => setQuestionForm((prev) => ({ ...prev, title: e.target.value }))}
-                />
+                <Label htmlFor="title">Title (Module Name)</Label>
+                <Popover open={titleSearchOpen} onOpenChange={setTitleSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={titleSearchOpen}
+                      className="w-full justify-between"
+                    >
+                      {questionForm.title || "Select or type a new title..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput 
+                        placeholder="Search or type new title..." 
+                        value={questionForm.title}
+                        onValueChange={(value) => setQuestionForm((prev) => ({ ...prev, title: value }))}
+                      />
+                      <CommandList>
+                        <CommandEmpty>
+                          <div className="py-2 text-center text-sm">
+                            <p>No existing titles found.</p>
+                            <p className="text-muted-foreground mt-1">Type to create a new title</p>
+                          </div>
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {uniqueTitles.map((title) => (
+                            <CommandItem
+                              key={title}
+                              value={title}
+                              onSelect={() => {
+                                setQuestionForm((prev) => ({ ...prev, title }));
+                                setTitleSearchOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  questionForm.title === title ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {title}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <p className="text-xs text-muted-foreground">
+                  Select an existing module title or type a new one to create a new module.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="question">Question</Label>
@@ -883,6 +1109,46 @@ const AdminDashboard = () => {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="expectedOutput">Expected Output (for validation)</Label>
+                <Textarea
+                  id="expectedOutput"
+                  placeholder='For SQL: JSON format {"columns": ["col1"], "values": [[val1]]}. For Python/JavaScript: exact output text'
+                  value={questionForm.expectedOutput}
+                  onChange={(e) => setQuestionForm((prev) => ({ ...prev, expectedOutput: e.target.value }))}
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground">
+                  For SQL questions: Provide JSON with columns and values arrays. For Python/JavaScript: Provide the exact expected output text. This will be used to validate user solutions. Leave empty if validation is not needed.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="difficulty">Difficulty Level</Label>
+                  <Select
+                    value={questionForm.difficulty}
+                    onValueChange={(value: "easy" | "medium" | "hard" | "") => setQuestionForm((prev) => ({ ...prev, difficulty: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select difficulty" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="company">Company Name</Label>
+                  <Input
+                    id="company"
+                    placeholder="e.g., Google, Amazon, Microsoft"
+                    value={questionForm.company}
+                    onChange={(e) => setQuestionForm((prev) => ({ ...prev, company: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
                 <Label>Tier</Label>
                 <Select
                   value={questionForm.tier}
@@ -897,8 +1163,30 @@ const AdminDashboard = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={handleSaveQuestion} disabled={isSavingQuestion}>
-                {isSavingQuestion ? "Saving..." : editingQuestion ? "Save changes" : "Add question"}
+            </div>
+            <div className="p-6 pt-4 flex-shrink-0 border-t border-border flex gap-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsDialogOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSaveQuestion} 
+                disabled={isSavingQuestion}
+                className="flex-1 bg-gradient-primary hover:shadow-glow-primary"
+              >
+                {isSavingQuestion ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : editingQuestion ? (
+                  "Save changes"
+                ) : (
+                  "Add question"
+                )}
               </Button>
             </div>
           </DialogContent>
@@ -906,34 +1194,121 @@ const AdminDashboard = () => {
       </div>
 
       <div className="space-y-4">
-        {questions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No questions yet. Add your first interview question.</p>
-        ) : (
-          questions.map((question) => (
-            <div key={question.id} className="border border-border rounded-lg p-4 space-y-2">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <Badge variant={question.tier === "free" ? "outline" : "secondary"}>
-                    {question.tier === "free" ? "Free" : "Paid"}
-                  </Badge>
-                  <p className="text-lg font-semibold mt-2">{question.title || "Untitled question"}</p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{question.question}</p>
-                  <p className="text-xs text-muted-foreground whitespace-pre-wrap mt-2">{question.answer}</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="icon" variant="outline" onClick={() => openEditDialog(question)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="destructive" onClick={() => handleDeleteQuestion(question.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+        {filteredQuestions.length === 0 ? (
+          <GlassCard className="text-center py-12">
+            <div className="max-w-md mx-auto space-y-4">
+              <div className="inline-flex p-4 rounded-full bg-muted/50">
+                <FileText className="h-8 w-8 text-muted-foreground" />
               </div>
+              <h3 className="text-xl font-semibold">
+                {questionSearch ? "No questions found" : "No questions yet"}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {questionSearch 
+                  ? "Try adjusting your search terms." 
+                  : "Add your first interview question to get started."}
+              </p>
+              {!questionSearch && (
+                <Button onClick={openCreateDialog} className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add First Question
+                </Button>
+              )}
             </div>
-          ))
+          </GlassCard>
+        ) : (
+          <div className="grid gap-4">
+            {filteredQuestions.map((question) => (
+              <GlassCard 
+                key={question.id} 
+                className="p-5 hover:border-primary/30 transition-all duration-300 group"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 space-y-3">
+                    {/* Header with badges */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <Badge variant={question.tier === "free" ? "outline" : "secondary"} className="font-semibold">
+                            {question.tier === "free" ? "Free" : "Premium"}
+                          </Badge>
+                          {question.difficulty && (
+                            <Badge 
+                              variant="outline" 
+                              className={cn(
+                                "text-xs",
+                                question.difficulty === "easy" && "border-green-500/50 text-green-500 bg-green-500/10",
+                                question.difficulty === "medium" && "border-yellow-500/50 text-yellow-500 bg-yellow-500/10",
+                                question.difficulty === "hard" && "border-red-500/50 text-red-500 bg-red-500/10"
+                              )}
+                            >
+                              {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
+                            </Badge>
+                          )}
+                          {question.company && (
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              <Briefcase className="h-3 w-3" />
+                              {question.company}
+                            </Badge>
+                          )}
+                        </div>
+                        <h3 className="text-lg font-bold text-foreground group-hover:text-primary transition-colors">
+                          {question.title || "Untitled Question"}
+                        </h3>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <Button 
+                          size="icon" 
+                          variant="outline" 
+                          onClick={() => openEditDialog(question)}
+                          className="hover:bg-primary/10 hover:border-primary/50"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          size="icon" 
+                          variant="destructive" 
+                          onClick={() => handleDeleteQuestion(question.id)}
+                          className="hover:bg-destructive/90"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Question preview */}
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-1">Question:</p>
+                        <p className="text-sm text-foreground/90 line-clamp-2 whitespace-pre-wrap">
+                          {question.question}
+                        </p>
+                      </div>
+                      {question.answer && (
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-1">Answer:</p>
+                          <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap">
+                            {question.answer}
+                          </p>
+                        </div>
+                      )}
+                      {question.expectedOutput && (
+                        <div className="pt-2 border-t border-border/50">
+                          <Badge variant="outline" className="text-xs">
+                            Has Expected Output
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
+            ))}
+          </div>
         )}
       </div>
-    </GlassCard>
+      </GlassCard>
+    </div>
   );
 
   const renderCaseStudiesSection = () => (
@@ -1586,11 +1961,20 @@ const AdminDashboard = () => {
                 <Badge variant={user.isPaid ? "default" : "outline"} className="uppercase tracking-wide">
                   {user.isPaid ? "Paid Access" : "Free Access"}
                 </Badge>
-                <Button variant="outline" onClick={() => toggleUserPaidStatus(user)}>
-                  {user.isPaid ? (
+                <Button 
+                  variant="outline" 
+                  onClick={() => toggleUserPaidStatus(user)}
+                  disabled={updatingUserId === user.id}
+                >
+                  {updatingUserId === user.id ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : user.isPaid ? (
                     <>
                       <Lock className="mr-2 h-4 w-4" />
-                      Revoke
+                      Revoke Premium
                     </>
                   ) : (
                     <>
@@ -1604,6 +1988,57 @@ const AdminDashboard = () => {
           ))
         )}
       </div>
+
+      {/* Confirmation Dialog for Premium Access Toggle */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {userToUpdate?.isPaid ? "Revoke Premium Access" : "Grant Premium Access"}
+            </DialogTitle>
+            <DialogDescription>
+              {userToUpdate?.isPaid ? (
+                <>
+                  Are you sure you want to revoke premium access for <strong>{userToUpdate?.displayName || userToUpdate?.email}</strong>? 
+                  They will lose access to premium content.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to grant premium access to <strong>{userToUpdate?.displayName || userToUpdate?.email}</strong>? 
+                  They will gain access to all premium content.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConfirmDialogOpen(false);
+                setUserToUpdate(null);
+              }}
+              disabled={updatingUserId !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmToggleUserPaidStatus}
+              disabled={updatingUserId !== null}
+            >
+              {updatingUserId ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : userToUpdate?.isPaid ? (
+                "Revoke Premium"
+              ) : (
+                "Grant Premium"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </GlassCard>
   );
 
@@ -1626,64 +2061,92 @@ const AdminDashboard = () => {
     }
   };
 
+  // Sidebar content component (reusable for desktop and mobile)
+  const SidebarContent = () => (
+    <>
+      {/* Logo/Header */}
+      <div className="p-4 lg:p-6 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldCheck className="h-5 w-5 lg:h-6 lg:w-6 text-primary" />
+          <h2 className="text-lg lg:text-xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+            Admin Panel
+          </h2>
+        </div>
+        <p className="text-xs text-muted-foreground">Site Control Center</p>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
+        {navigationItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeSection === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveSection(item.id);
+                if (isMobile) setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "text-foreground hover:bg-muted"
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="font-medium text-sm lg:text-base">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Logout Button */}
+      <div className="p-4 border-t border-border flex-shrink-0">
+        <Button
+          variant="destructive"
+          className="w-full"
+          onClick={handleLogout}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </Button>
+      </div>
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-card border-r border-border flex flex-col">
-        {/* Logo/Header */}
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-            <h2 className="text-xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              Admin Panel
-            </h2>
-          </div>
-          <p className="text-xs text-muted-foreground">Site Control Center</p>
-        </div>
+    <div className="min-h-screen bg-background">
+      {/* Mobile Sidebar (Sheet) */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-64 p-0">
+          <SidebarContent />
+        </SheetContent>
+      </Sheet>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeSection === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveSection(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-foreground hover:bg-muted"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="font-medium">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Logout Button */}
-        <div className="p-4 border-t border-border">
-          <Button
-            variant="destructive"
-            className="w-full"
-            onClick={handleLogout}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
-        </div>
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:w-64 lg:bg-card lg:border-r lg:border-border lg:flex lg:flex-col lg:z-50">
+        <SidebarContent />
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold">
+      <main className="lg:ml-64">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+          {/* Mobile Menu Button */}
+          <div className="lg:hidden mb-4">
+            <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+            </Sheet>
+          </div>
+          
+          <div className="mb-4 lg:mb-6">
+            <h1 className="text-2xl sm:text-3xl font-bold">
               {navigationItems.find((item) => item.id === activeSection)?.label || "Dashboard"}
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-sm sm:text-base text-muted-foreground mt-1">
               {getSectionDescription(activeSection)}
             </p>
           </div>

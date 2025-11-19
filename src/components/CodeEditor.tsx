@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
-import { Play, Loader2 } from "lucide-react";
+import { Play, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import initSqlJs, { Database } from "sql.js";
 import "@/lib/monaco-config";
@@ -11,9 +11,10 @@ interface CodeEditorProps {
   defaultValue?: string;
   height?: string;
   question?: string;
+  expectedOutput?: string; // Expected output for validation
 }
 
-const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question }: CodeEditorProps) => {
+const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, expectedOutput }: CodeEditorProps) => {
   // Get comment syntax based on language
   const getCommentPrefix = (lang: string): string => {
     if (lang === "python") return "#";
@@ -76,6 +77,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const [output, setOutput] = useState<{ columns: string[]; values: any[][] } | null>(null);
   const [textOutput, setTextOutput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [validationResult, setValidationResult] = useState<{ passed: boolean; message?: string } | null>(null);
   const [sqlJs, setSqlJs] = useState<any>(null);
   const [db, setDb] = useState<Database | null>(null);
   const [pyodide, setPyodide] = useState<any>(null);
@@ -84,11 +86,94 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const dbRef = useRef<Database | null>(null);
   const pyodideLoading = useRef(false);
 
+  // Function to normalize and compare outputs
+  const compareOutputs = (
+    actualOutput: { columns: string[]; values: any[][] } | string | null,
+    expectedOutput: string
+  ): { passed: boolean; message?: string } => {
+    if (!expectedOutput) {
+      return { passed: true }; // No expected output means no validation
+    }
+
+    try {
+      if (language === "sql" && actualOutput && typeof actualOutput === "object" && "columns" in actualOutput) {
+        // For SQL, expectedOutput should be a JSON string
+        const expected = JSON.parse(expectedOutput);
+        
+        // Compare columns
+        const actualCols = actualOutput.columns.map(c => c.toLowerCase().trim());
+        const expectedCols = expected.columns?.map((c: string) => c.toLowerCase().trim()) || [];
+        
+        if (actualCols.length !== expectedCols.length) {
+          return { 
+            passed: false, 
+            message: `Column count mismatch. Expected ${expectedCols.length}, got ${actualCols.length}` 
+          };
+        }
+
+        // Compare values (normalize for comparison)
+        const actualValues = actualOutput.values.map(row => 
+          row.map(cell => String(cell).toLowerCase().trim())
+        ).sort();
+        const expectedValues = (expected.values || []).map((row: any[]) => 
+          row.map((cell: any) => String(cell).toLowerCase().trim())
+        ).sort();
+
+        if (actualValues.length !== expectedValues.length) {
+          return { 
+            passed: false, 
+            message: `Row count mismatch. Expected ${expectedValues.length}, got ${actualValues.length}` 
+          };
+        }
+
+        // Deep comparison of values
+        const actualStr = JSON.stringify(actualValues);
+        const expectedStr = JSON.stringify(expectedValues);
+        
+        if (actualStr === expectedStr) {
+          return { passed: true, message: "Output matches expected result! ✓" };
+        } else {
+          return { 
+            passed: false, 
+            message: "Output does not match expected result. Check your solution." 
+          };
+        }
+      } else if (typeof actualOutput === "string" || textOutput) {
+        // For text-based outputs (Python, JavaScript, etc.)
+        const actual = (typeof actualOutput === "string" ? actualOutput : textOutput || "").trim().toLowerCase();
+        const expected = expectedOutput.trim().toLowerCase();
+        
+        // Remove extra whitespace and compare
+        const normalizedActual = actual.replace(/\s+/g, " ");
+        const normalizedExpected = expected.replace(/\s+/g, " ");
+        
+        if (normalizedActual === normalizedExpected) {
+          return { passed: true, message: "Output matches expected result! ✓" };
+        } else {
+          // Try partial match
+          if (normalizedActual.includes(normalizedExpected) || normalizedExpected.includes(normalizedActual)) {
+            return { passed: true, message: "Output partially matches expected result! ✓" };
+          }
+          return { 
+            passed: false, 
+            message: "Output does not match expected result. Check your solution." 
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Validation error:", error);
+      return { passed: false, message: "Error validating output. Please check the expected output format." };
+    }
+
+    return { passed: true };
+  };
+
   // Update code when question, defaultValue, or language changes
   useEffect(() => {
     setCode(getInitialCode);
     setOutput(null);
     setTextOutput(null);
+    setValidationResult(null);
     // Reset database initialization when language changes
     if (language !== "sql") {
       dbInitialized.current = false;
@@ -237,6 +322,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     setLoading(true);
     setOutput(null);
     setTextOutput(null);
+    setValidationResult(null);
 
     try {
       if (language === "sql") {
@@ -272,13 +358,37 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           
           if (result.length > 0) {
             const { columns, values } = result[0];
-            setOutput({ columns, values });
-            toast({
-              title: "Query executed successfully",
-              description: `Returned ${values.length} row(s).`,
-            });
+            const outputData = { columns, values };
+            setOutput(outputData);
+            
+            // Validate output if expectedOutput is provided
+            if (expectedOutput) {
+              const validation = compareOutputs(outputData, expectedOutput);
+              setValidationResult(validation);
+              if (validation.passed) {
+                toast({
+                  title: "✓ Solution Correct!",
+                  description: validation.message || "Your output matches the expected result.",
+                });
+              } else {
+                toast({
+                  title: "Solution Incorrect",
+                  description: validation.message || "Your output doesn't match the expected result.",
+                  variant: "destructive",
+                });
+              }
+            } else {
+              toast({
+                title: "Query executed successfully",
+                description: `Returned ${values.length} row(s).`,
+              });
+            }
           } else {
             setOutput({ columns: [], values: [] });
+            if (expectedOutput) {
+              const validation = compareOutputs({ columns: [], values: [] }, expectedOutput);
+              setValidationResult(validation);
+            }
             toast({
               title: "Query executed",
               description: "No results returned.",
@@ -320,11 +430,31 @@ sys.stdout = StringIO()
           outputText = `Error: ${error.message || String(error)}`;
         }
 
-        setTextOutput(outputText || "(No output)");
-        toast({
-          title: "Code executed",
-          description: outputText ? "Check the output below." : "Code ran successfully with no output.",
-        });
+        const finalOutput = outputText || "(No output)";
+        setTextOutput(finalOutput);
+        
+        // Validate output if expectedOutput is provided
+        if (expectedOutput) {
+          const validation = compareOutputs(finalOutput, expectedOutput);
+          setValidationResult(validation);
+          if (validation.passed) {
+            toast({
+              title: "✓ Solution Correct!",
+              description: validation.message || "Your output matches the expected result.",
+            });
+          } else {
+            toast({
+              title: "Solution Incorrect",
+              description: validation.message || "Your output doesn't match the expected result.",
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({
+            title: "Code executed",
+            description: outputText ? "Check the output below." : "Code ran successfully with no output.",
+          });
+        }
       } else if (language === "javascript") {
         // Execute JavaScript code
         try {
@@ -362,11 +492,31 @@ sys.stdout = StringIO()
             outputText = outputText ? `${outputText}\n\nReturn value: ${typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)}` : `Return value: ${typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)}`;
           }
           
-          setTextOutput(outputText || "(No output)");
-          toast({
-            title: "Code executed",
-            description: outputText ? "Check the output below." : "Code ran successfully with no output.",
-          });
+          const finalOutput = outputText || "(No output)";
+          setTextOutput(finalOutput);
+          
+          // Validate output if expectedOutput is provided
+          if (expectedOutput) {
+            const validation = compareOutputs(finalOutput, expectedOutput);
+            setValidationResult(validation);
+            if (validation.passed) {
+              toast({
+                title: "✓ Solution Correct!",
+                description: validation.message || "Your output matches the expected result.",
+              });
+            } else {
+              toast({
+                title: "Solution Incorrect",
+                description: validation.message || "Your output doesn't match the expected result.",
+                variant: "destructive",
+              });
+            }
+          } else {
+            toast({
+              title: "Code executed",
+              description: outputText ? "Check the output below." : "Code ran successfully with no output.",
+            });
+          }
         } catch (error: any) {
           setTextOutput(`Error: ${error.message || String(error)}\n\nStack trace:\n${error.stack || 'No stack trace available'}`);
           toast({
@@ -412,11 +562,31 @@ sys.stdout = StringIO()
             outputText = outputText ? `${outputText}\n\nReturn value: ${typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)}` : `Return value: ${typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)}`;
           }
           
-          setTextOutput(outputText || "(No output)\n\nNote: TypeScript is executed as JavaScript. Full type checking is not performed.");
-          toast({
-            title: "Code executed",
-            description: "TypeScript executed as JavaScript. Full type checking not available.",
-          });
+          const finalOutput = outputText || "(No output)\n\nNote: TypeScript is executed as JavaScript. Full type checking is not performed.";
+          setTextOutput(finalOutput);
+          
+          // Validate output if expectedOutput is provided
+          if (expectedOutput) {
+            const validation = compareOutputs(finalOutput, expectedOutput);
+            setValidationResult(validation);
+            if (validation.passed) {
+              toast({
+                title: "✓ Solution Correct!",
+                description: validation.message || "Your output matches the expected result.",
+              });
+            } else {
+              toast({
+                title: "Solution Incorrect",
+                description: validation.message || "Your output doesn't match the expected result.",
+                variant: "destructive",
+              });
+            }
+          } else {
+            toast({
+              title: "Code executed",
+              description: "TypeScript executed as JavaScript. Full type checking not available.",
+            });
+          }
         } catch (error: any) {
           setTextOutput(`Error: ${error.message || String(error)}\n\nStack trace:\n${error.stack || 'No stack trace available'}\n\nNote: TypeScript is executed as JavaScript.`);
           toast({
@@ -452,17 +622,17 @@ sys.stdout = StringIO()
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 p-1 sm:p-2">
       <div className="border border-border rounded-lg overflow-hidden bg-background/50">
-        <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border">
-          <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-muted/30 border-b border-border gap-2">
+          <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wide">
             {language.toUpperCase()} Editor
           </span>
           <Button
             onClick={handleRun}
             disabled={loading || (language === "sql" && !db) || (language === "python" && !pyodide)}
             size="sm"
-            className="gap-2"
+            className="gap-1 sm:gap-2 text-xs sm:text-sm h-8 sm:h-9"
             title={
               language === "sql" && !db
                 ? "Waiting for SQL database to initialize..."
@@ -473,13 +643,13 @@ sys.stdout = StringIO()
           >
             {loading ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Running...
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
+                <span className="hidden sm:inline">Running...</span>
               </>
             ) : (
               <>
-                <Play className="h-4 w-4" />
-                Run
+                <Play className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Run</span>
               </>
             )}
           </Button>
@@ -493,7 +663,7 @@ sys.stdout = StringIO()
           loading={<div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>}
           options={{
             minimap: { enabled: false },
-            fontSize: 14,
+            fontSize: 12,
             lineNumbers: "on",
             roundedSelection: false,
             scrollBeyondLastLine: false,
@@ -501,9 +671,43 @@ sys.stdout = StringIO()
             automaticLayout: true,
             tabSize: 2,
             wordWrap: "on",
+            scrollbar: {
+              vertical: "auto",
+              horizontal: "auto",
+            },
           }}
         />
       </div>
+
+      {validationResult && (
+        <div className={`border rounded-lg overflow-hidden ${
+          validationResult.passed 
+            ? "border-green-500/50 bg-green-500/10" 
+            : "border-red-500/50 bg-red-500/10"
+        }`}>
+          <div className={`px-4 py-3 flex items-center gap-2 ${
+            validationResult.passed 
+              ? "bg-green-500/20" 
+              : "bg-red-500/20"
+          }`}>
+            {validationResult.passed ? (
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+            ) : (
+              <XCircle className="h-5 w-5 text-red-500" />
+            )}
+            <span className={`text-sm font-semibold ${
+              validationResult.passed ? "text-green-500" : "text-red-500"
+            }`}>
+              {validationResult.passed ? "Solution Correct!" : "Solution Incorrect"}
+            </span>
+            {validationResult.message && (
+              <span className="text-xs text-muted-foreground ml-2">
+                {validationResult.message}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {(output || textOutput) && (
         <div className="border border-border rounded-lg overflow-hidden bg-background/50">
