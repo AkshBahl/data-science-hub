@@ -41,6 +41,109 @@ const detectLanguage = (moduleTitle: string): string => {
   return "python";
 };
 
+// Helper function to parse JSON and check if it's a table structure
+const parseTableJSON = (text: string): { columns?: string[]; values?: any[][] } | null => {
+  try {
+    const parsed = JSON.parse(text.trim());
+    if (
+      parsed && 
+      typeof parsed === 'object' && 
+      !Array.isArray(parsed) &&
+      Array.isArray(parsed.columns) && 
+      Array.isArray(parsed.values) &&
+      parsed.columns.length > 0
+    ) {
+      return parsed;
+    }
+  } catch (e) {
+    // Not valid JSON or not table format
+  }
+  return null;
+};
+
+// Helper function to render question content with JSON table detection
+const renderQuestionContent = (questionText: string) => {
+  // First, try to parse the entire question as JSON
+  const tableData = parseTableJSON(questionText);
+  if (tableData) {
+    // Entire question is a JSON table
+    return (
+      <div className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-border/50 bg-muted/30">
+                {tableData.columns?.map((col, idx) => (
+                  <th key={idx} className="px-5 py-3 text-left font-bold text-foreground">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tableData.values?.map((row, rowIdx) => (
+                <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                  {row.map((cell, cellIdx) => (
+                    <td key={cellIdx} className="px-5 py-3 text-foreground/90">
+                      {String(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // Otherwise, render as regular text with line breaks
+  return (
+    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 space-y-3">
+      {questionText.split('\n').map((line, idx) => {
+        // Check if this line is a JSON table
+        const lineTableData = parseTableJSON(line);
+        if (lineTableData) {
+          return (
+            <div key={idx} className="my-4 rounded-md bg-background/60 border border-border/50 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-border/50 bg-muted/30">
+                      {lineTableData.columns?.map((col, colIdx) => (
+                        <th key={colIdx} className="px-5 py-3 text-left font-bold text-foreground">
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineTableData.values?.map((row, rowIdx) => (
+                      <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                        {row.map((cell, cellIdx) => (
+                          <td key={cellIdx} className="px-5 py-3 text-foreground/90">
+                            {String(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+        // Regular text line
+        return (
+          <p key={idx} className="mb-2 last:mb-0">
+            {line || '\u00A0'}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
 const QuestionDetail = () => {
   const { questionId } = useParams<{ questionId: string }>();
   const navigate = useNavigate();
@@ -392,13 +495,7 @@ const QuestionDetail = () => {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsContent value="question" className="mt-0">
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 space-y-3">
-                    {question.question.split('\n').map((line, idx) => (
-                      <p key={idx} className="mb-2 last:mb-0">
-                        {line || '\u00A0'}
-                      </p>
-                    ))}
-                  </div>
+                  {renderQuestionContent(question.question)}
                 </TabsContent>
 
                 <TabsContent value="hint" className="mt-0">
@@ -430,11 +527,46 @@ const QuestionDetail = () => {
                         <Eye className="h-4 w-4" />
                         Expected Output
                       </div>
-                      <div className="rounded-md bg-background/60 border border-border/50 p-3">
-                        <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto">
-                          {question.expectedOutput}
-                        </pre>
-                      </div>
+                      {(() => {
+                        const tableData = parseTableJSON(question.expectedOutput);
+                        if (tableData) {
+                          return (
+                            <div className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b-2 border-border/50 bg-muted/30">
+                                      {tableData.columns?.map((col, idx) => (
+                                        <th key={idx} className="px-5 py-3 text-left font-bold text-foreground">
+                                          {col}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {tableData.values?.map((row, rowIdx) => (
+                                      <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                                        {row.map((cell, cellIdx) => (
+                                          <td key={cellIdx} className="px-5 py-3 text-foreground/90">
+                                            {String(cell)}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="rounded-md bg-background/60 border border-border/50 p-3">
+                            <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto">
+                              {question.expectedOutput}
+                            </pre>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">

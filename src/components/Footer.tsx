@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Instagram, Linkedin, Github, Mail, Shield } from "lucide-react";
+import { Instagram, Linkedin, Github, Mail, Shield, Phone } from "lucide-react";
 
 const Footer = () => {
   return (
@@ -36,7 +36,11 @@ const Footer = () => {
               <a href="#" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Visit our GitHub">
                 <Github className="h-5 w-5" />
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Send us an email">
+              <a 
+                href="mailto:mahuritushar66@gmail.com" 
+                className="text-muted-foreground hover:text-primary transition-colors" 
+                aria-label="Send us an email"
+              >
                 <Mail className="h-5 w-5" />
               </a>
             </div>
@@ -60,7 +64,7 @@ const Footer = () => {
           <div>
             <h4 className="font-semibold mb-4 text-foreground">Resources</h4>
             <ul className="space-y-2">
-              {["Case Studies", "Projects", "Blog", "Free Downloads"].map((item) => (
+              {["Case Studies", "Projects", "Blog"].map((item) => (
                 <li key={item}>
                   <Link to={`/${item.toLowerCase().replace(" ", "-")}`} className="text-muted-foreground hover:text-primary transition-colors text-sm">
                     {item}
@@ -73,10 +77,28 @@ const Footer = () => {
           {/* Contact */}
           <div>
             <h4 className="font-semibold mb-4 text-foreground">Get in Touch</h4>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>Email: tushar@bytesofdata.com</li>
-              <li>WhatsApp: +91 XXXXXXXXXX</li>
-              <li>Based in India</li>
+            <ul className="space-y-3 text-sm">
+              <li>
+                <a 
+                  href="mailto:mahuritushar66@gmail.com" 
+                  className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
+                >
+                  <Mail className="h-4 w-4" />
+                  <span>mahuritushar66@gmail.com</span>
+                </a>
+              </li>
+              <li>
+                <a 
+                  href="https://wa.me/917894263847" 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
+                >
+                  <Phone className="h-4 w-4" />
+                  <span>+91 78942 63847</span>
+                </a>
+              </li>
+              <li className="text-muted-foreground">Based in India</li>
             </ul>
           </div>
         </div>
