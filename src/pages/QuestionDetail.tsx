@@ -97,49 +97,107 @@ const renderQuestionContent = (questionText: string) => {
     );
   }
 
+  // Try to find JSON blocks within the text (handles multi-line JSON)
+  const jsonBlockRegex = /\{[\s\S]*?"columns"[\s\S]*?"values"[\s\S]*?\}/g;
+  const jsonBlocks: Array<{ start: number; end: number; data: { columns?: string[]; values?: any[][] } }> = [];
+  let match;
+  
+  while ((match = jsonBlockRegex.exec(questionText)) !== null) {
+    const jsonStr = match[0];
+    const tableData = parseTableJSON(jsonStr);
+    if (tableData) {
+      jsonBlocks.push({
+        start: match.index,
+        end: match.index + jsonStr.length,
+        data: tableData
+      });
+    }
+  }
+
+  // If we found JSON blocks, render with mixed content
+  if (jsonBlocks.length > 0) {
+    const parts: Array<{ type: 'text' | 'table'; content: string | { columns?: string[]; values?: any[][] } }> = [];
+    let lastIndex = 0;
+
+    jsonBlocks.forEach((block) => {
+      // Add text before the JSON block
+      if (block.start > lastIndex) {
+        const textBefore = questionText.substring(lastIndex, block.start).trim();
+        if (textBefore) {
+          parts.push({ type: 'text', content: textBefore });
+        }
+      }
+      // Add the JSON table
+      parts.push({ type: 'table', content: block.data });
+      lastIndex = block.end;
+    });
+
+    // Add remaining text after the last JSON block
+    if (lastIndex < questionText.length) {
+      const textAfter = questionText.substring(lastIndex).trim();
+      if (textAfter) {
+        parts.push({ type: 'text', content: textAfter });
+      }
+    }
+
+    return (
+      <div className="space-y-4">
+        {parts.map((part, idx) => {
+          if (part.type === 'table') {
+            const tableData = part.content as { columns?: string[]; values?: any[][] };
+            return (
+              <div key={idx} className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-border/50 bg-muted/30">
+                        {tableData.columns?.map((col, colIdx) => (
+                          <th key={colIdx} className="px-5 py-3 text-left font-bold text-foreground">
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableData.values?.map((row, rowIdx) => (
+                        <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                          {row.map((cell, cellIdx) => (
+                            <td key={cellIdx} className="px-5 py-3 text-foreground/90">
+                              {String(cell)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          } else {
+            // Render text with line breaks
+            return (
+              <div key={idx} className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
+                {(part.content as string).split('\n').map((line, lineIdx) => (
+                  <p key={lineIdx} className="mb-2 last:mb-0">
+                    {line || '\u00A0'}
+                  </p>
+                ))}
+              </div>
+            );
+          }
+        })}
+      </div>
+    );
+  }
+
   // Otherwise, render as regular text with line breaks
   return (
     <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 space-y-3">
-      {questionText.split('\n').map((line, idx) => {
-        // Check if this line is a JSON table
-        const lineTableData = parseTableJSON(line);
-        if (lineTableData) {
-          return (
-            <div key={idx} className="my-4 rounded-md bg-background/60 border border-border/50 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-border/50 bg-muted/30">
-                      {lineTableData.columns?.map((col, colIdx) => (
-                        <th key={colIdx} className="px-5 py-3 text-left font-bold text-foreground">
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lineTableData.values?.map((row, rowIdx) => (
-                      <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
-                        {row.map((cell, cellIdx) => (
-                          <td key={cellIdx} className="px-5 py-3 text-foreground/90">
-                            {String(cell)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        }
-        // Regular text line
-        return (
-          <p key={idx} className="mb-2 last:mb-0">
-            {line || '\u00A0'}
-          </p>
-        );
-      })}
+      {questionText.split('\n').map((line, idx) => (
+        <p key={idx} className="mb-2 last:mb-0">
+          {line || '\u00A0'}
+        </p>
+      ))}
     </div>
   );
 };

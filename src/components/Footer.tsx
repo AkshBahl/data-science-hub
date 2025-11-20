@@ -8,9 +8,11 @@ const Footer = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="space-y-4">
-            <h3 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              bytes_of_data
-            </h3>
+            <img 
+              src="/logo.jpg" 
+              alt="BytesOfData Logo" 
+              className="h-16 w-16 object-contain"
+            />
             <p className="text-muted-foreground text-sm">
               Empowering data scientists through education, mentorship, and practical experience.
             </p>

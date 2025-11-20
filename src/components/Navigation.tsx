@@ -61,9 +61,11 @@ const Navigation = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-2 group">
-            <div className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent group-hover:animate-pulse-glow transition-all">
-              bytes_of_data
-            </div>
+            <img 
+              src="/logo.jpg" 
+              alt="BytesOfData Logo" 
+              className="h-20  w-16 object-contain group-hover:opacity-80 transition-opacity"
+            />
           </Link>
 
           {/* Desktop Navigation */}
