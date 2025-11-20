@@ -22,6 +22,7 @@ import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import InterviewModule from "./pages/InterviewModule";
 import QuestionDetail from "./pages/QuestionDetail";
+import QuestionHint from "./pages/QuestionHint";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
 import Profile from "./pages/Profile";
@@ -59,6 +60,7 @@ const App = () => (
                         <Route path="/interview-prep" element={<InterviewPrep />} />
                         <Route path="/interview-prep/module/:moduleSlug" element={<InterviewModule />} />
                         <Route path="/interview-prep/question/:questionId" element={<QuestionDetail />} />
+                        <Route path="/interview-prep/question/:questionId/hint" element={<QuestionHint />} />
                         <Route path="/profile" element={<Profile />} />
                         <Route path="/leaderboard" element={<Leaderboard />} />
                         <Route path="/mentorship" element={<Mentorship />} />

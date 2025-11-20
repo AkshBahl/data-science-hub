@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
-import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { db as firestoreDb } from "@/lib/firebase";
@@ -88,6 +89,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const [textOutput, setTextOutput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [validationResult, setValidationResult] = useState<{ passed: boolean; message?: string } | null>(null);
+  const [showXpModal, setShowXpModal] = useState(false);
   const { toast: toastHook } = useToast();
 
   // Reset hasAwardedXP when questionId changes
@@ -111,7 +113,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
   // Function to track question completion and award XP
   const trackQuestionCompletion = async (questionId: string) => {
-    if (!currentUser || !questionId || hasAwardedXP) return;
+    if (!currentUser || !questionId || hasAwardedXP) return false;
 
     try {
       // Check if already completed
@@ -119,7 +121,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       const submissionSnap = await getDoc(submissionRef);
 
       if (submissionSnap.exists() && submissionSnap.data().status === "completed") {
-        return; // Already completed
+        return false; // Already completed
       }
 
       // Mark as completed
@@ -142,8 +144,10 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         title: "🎉 Question Completed!",
         description: "You earned 25 XP!",
       });
+      return true;
     } catch (error) {
       console.error("Error tracking completion:", error);
+      return false;
     }
   };
   const [sqlJs, setSqlJs] = useState<any>(null);
@@ -560,7 +564,10 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
                 });
                 // Track completion and award XP
                 if (questionId) {
-                  trackQuestionCompletion(questionId);
+                  const xpAwarded = await trackQuestionCompletion(questionId);
+                  if (xpAwarded) {
+                    setShowXpModal(true);
+                  }
                 }
               } else {
                 toast({
@@ -636,7 +643,10 @@ sys.stdout = StringIO()
             });
             // Track completion and award XP
             if (questionId) {
-              trackQuestionCompletion(questionId);
+              const xpAwarded = await trackQuestionCompletion(questionId);
+              if (xpAwarded) {
+                setShowXpModal(true);
+              }
             }
           } else {
             toast({
@@ -700,6 +710,12 @@ sys.stdout = StringIO()
                 title: "✓ Solution Correct!",
                 description: validation.message || "Your output matches the expected result.",
               });
+              if (questionId) {
+                const xpAwarded = await trackQuestionCompletion(questionId);
+                if (xpAwarded) {
+                  setShowXpModal(true);
+                }
+              }
             } else {
               toast({
                 title: "Solution Incorrect",
@@ -776,6 +792,12 @@ sys.stdout = StringIO()
                 title: "✓ Solution Correct!",
                 description: validation.message || "Your output matches the expected result.",
               });
+              if (questionId) {
+                const xpAwarded = await trackQuestionCompletion(questionId);
+                if (xpAwarded) {
+                  setShowXpModal(true);
+                }
+              }
             } else {
               toast({
                 title: "Solution Incorrect",
@@ -847,7 +869,10 @@ sys.stdout = StringIO()
               });
               // Track completion and award XP
               if (questionId) {
-                trackQuestionCompletion(questionId);
+                const xpAwarded = await trackQuestionCompletion(questionId);
+                if (xpAwarded) {
+                  setShowXpModal(true);
+                }
               }
             } else {
               toast({
@@ -1076,6 +1101,33 @@ sys.stdout = StringIO()
           </ul>
         </div>
       )}
+
+      <Dialog open={showXpModal} onOpenChange={setShowXpModal}>
+        <DialogContent className="max-w-sm text-center space-y-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-center gap-2 text-2xl">
+              <Trophy className="h-6 w-6 text-yellow-400" />
+              +25 XP
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Question completed! Keep solving to climb the leaderboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              XP is awarded once per question. Check the leaderboard to see how you rank.
+            </p>
+            <div className="flex justify-center gap-3">
+              <Button variant="outline" onClick={() => setShowXpModal(false)}>
+                Keep Practicing
+              </Button>
+              <Button onClick={() => { setShowXpModal(false); window.location.href = "/leaderboard"; }}>
+                View Leaderboard
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -33,6 +33,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -40,6 +41,15 @@ import { db, storage } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_GLOBAL_PRICE,
+  DEFAULT_MODULE_PRICE,
+  DEFAULT_MODULE_TITLE,
+  GLOBAL_PRICING_DOC,
+  MODULE_PRICING_COLLECTION,
+  getModulePricingDocId,
+  normalizeModuleTitle,
+} from "@/constants/pricing";
 
 type InterviewQuestion = {
   id: string;
@@ -54,6 +64,7 @@ type InterviewQuestion = {
   difficulty?: "easy" | "medium" | "hard";
   company?: string;
   questionOfTheWeek?: boolean; // Mark as Question of the Week
+  hint?: string;
 };
 
 type ManagedUser = {
@@ -114,7 +125,7 @@ type Service = {
 type AdminSection = "questions" | "case-studies" | "projects" | "blog" | "services" | "users";
 
 const AdminDashboard = () => {
-  const DEFAULT_TITLE = "General";
+  const DEFAULT_TITLE = DEFAULT_MODULE_TITLE;
   const navigate = useNavigate();
   const { toast } = useToast();
   const { setUserPaidStatus, logout } = useAuth();
@@ -138,7 +149,13 @@ const AdminDashboard = () => {
     difficulty: "" as "" | "easy" | "medium" | "hard",
     company: "",
     questionOfTheWeek: false,
+    hint: "",
   });
+  const [modulePricing, setModulePricing] = useState<Record<string, number>>({});
+  const [modulePricingInputs, setModulePricingInputs] = useState<Record<string, string>>({});
+  const [globalModulePrice, setGlobalModulePrice] = useState<string>(String(DEFAULT_GLOBAL_PRICE));
+  const [savingModulePrice, setSavingModulePrice] = useState<string | null>(null);
+  const [savingGlobalPrice, setSavingGlobalPrice] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [questionSearch, setQuestionSearch] = useState("");
   const [titleSearchOpen, setTitleSearchOpen] = useState(false);
@@ -213,6 +230,8 @@ const AdminDashboard = () => {
         return {
           id: docSnap.id,
           title: data.title,
+          questionTitle: data.questionTitle,
+          questionOfTheWeek: data.questionOfTheWeek ?? false,
           topic: data.topic,
           question: data.question,
           answer: data.answer,
@@ -221,12 +240,47 @@ const AdminDashboard = () => {
           expectedOutput: data.expectedOutput,
           difficulty: data.difficulty,
           company: data.company,
+          hint: data.hint,
         } as InterviewQuestion;
       });
       setQuestions(mapped);
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const pricingRef = collection(db, MODULE_PRICING_COLLECTION);
+    const unsubscribe = onSnapshot(pricingRef, (snapshot) => {
+      const nextPricing: Record<string, number> = {};
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (docSnap.id === GLOBAL_PRICING_DOC) {
+          if (typeof data.price === "number" && !Number.isNaN(data.price)) {
+            setGlobalModulePrice(String(data.price));
+          }
+          return;
+        }
+        if (typeof data.price === "number" && !Number.isNaN(data.price)) {
+          const normalized = normalizeModuleTitle(data.title || docSnap.id);
+          nextPricing[normalized] = data.price;
+        }
+      });
+      setModulePricing(nextPricing);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    setModulePricingInputs((prev) => {
+      const updated = { ...prev };
+      Object.entries(modulePricing).forEach(([title, price]) => {
+        if (updated[title] === undefined || updated[title] === "") {
+          updated[title] = String(price);
+        }
+      });
+      return updated;
+    });
+  }, [modulePricing]);
 
   useEffect(() => {
     const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
@@ -340,7 +394,7 @@ const AdminDashboard = () => {
 
   const openCreateDialog = () => {
     setEditingQuestion(null);
-    setQuestionForm({ title: "", questionTitle: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "", questionOfTheWeek: false });
+    setQuestionForm({ title: "", questionTitle: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "", questionOfTheWeek: false, hint: "" });
     setTitleSearchOpen(false);
     setIsDialogOpen(true);
   };
@@ -358,6 +412,7 @@ const AdminDashboard = () => {
       difficulty: question.difficulty ?? "",
       company: question.company ?? "",
       questionOfTheWeek: question.questionOfTheWeek ?? false,
+      hint: question.hint ?? "",
     });
     setTitleSearchOpen(false);
     setIsDialogOpen(true);
@@ -398,6 +453,9 @@ const AdminDashboard = () => {
       }
       if (questionForm.expectedOutput.trim()) {
         questionData.expectedOutput = questionForm.expectedOutput.trim();
+      }
+      if (questionForm.hint.trim()) {
+        questionData.hint = questionForm.hint.trim();
       }
       if (questionForm.questionOfTheWeek) {
         questionData.questionOfTheWeek = true;
@@ -1010,6 +1068,170 @@ const AdminDashboard = () => {
       </div>
 
       <GlassCard className="p-6 space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-semibold">Module Pricing (INR)</h3>
+            <p className="text-sm text-muted-foreground">
+              Set the paid access price for each interview module. Leave empty to use the default ₹{DEFAULT_MODULE_PRICE}.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">All Modules Pass</span>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min="1"
+                value={globalModulePrice}
+                onChange={(e) => setGlobalModulePrice(e.target.value)}
+                className="w-28"
+                placeholder={String(DEFAULT_GLOBAL_PRICE)}
+              />
+              <Button
+                onClick={async () => {
+                  const amount = Number(globalModulePrice);
+                  if (!Number.isFinite(amount) || amount <= 0) {
+                    toast({
+                      title: "Invalid price",
+                      description: "Enter a positive number for the global pass.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setSavingGlobalPrice(true);
+                  try {
+                    await setDoc(
+                      doc(db, MODULE_PRICING_COLLECTION, GLOBAL_PRICING_DOC),
+                      {
+                        price: amount,
+                        currency: "INR",
+                        type: "global",
+                        updatedAt: serverTimestamp(),
+                      },
+                      { merge: true }
+                    );
+                    toast({ title: "Global price updated", description: `All modules now cost ₹${amount}` });
+                  } catch (error: any) {
+                    toast({
+                      title: "Failed to update global price",
+                      description: error.message || "Please try again.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setSavingGlobalPrice(false);
+                  }
+                }}
+                disabled={savingGlobalPrice}
+                className="min-w-[96px]"
+              >
+                {savingGlobalPrice ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving
+                  </>
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+        {uniqueTitles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Add a question to create your first module.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {uniqueTitles.map((title) => {
+              const normalizedTitle = normalizeModuleTitle(title);
+              const inputValue = modulePricingInputs[normalizedTitle] ?? "";
+              const effectivePrice = modulePricing[normalizedTitle] ?? DEFAULT_MODULE_PRICE;
+              return (
+                <div
+                  key={normalizedTitle}
+                  className="rounded-xl border border-border/60 bg-background/80 p-4 space-y-3 shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Current price: <span className="font-medium text-foreground">₹{effectivePrice}</span>
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {effectivePrice === DEFAULT_MODULE_PRICE ? "Default" : "Custom"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min="1"
+                      value={inputValue}
+                      onChange={(e) =>
+                        setModulePricingInputs((prev) => ({
+                          ...prev,
+                          [normalizedTitle]: e.target.value,
+                        }))
+                      }
+                      placeholder={String(DEFAULT_MODULE_PRICE)}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        const rawValue = modulePricingInputs[normalizedTitle] ?? String(effectivePrice);
+                        const amount = Number(rawValue);
+                        if (!Number.isFinite(amount) || amount <= 0) {
+                          toast({
+                            title: "Invalid price",
+                            description: "Enter a positive number in rupees.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setSavingModulePrice(normalizedTitle);
+                        try {
+                          await setDoc(
+                            doc(db, MODULE_PRICING_COLLECTION, getModulePricingDocId(normalizedTitle)),
+                            {
+                              title: normalizedTitle,
+                              price: amount,
+                              currency: "INR",
+                              updatedAt: serverTimestamp(),
+                            },
+                            { merge: true }
+                          );
+                          toast({
+                            title: "Module price updated",
+                            description: `${normalizedTitle} now costs ₹${amount}`,
+                          });
+                        } catch (error: any) {
+                          toast({
+                            title: "Failed to save price",
+                            description: error.message || "Please try again.",
+                            variant: "destructive",
+                          });
+                        } finally {
+                          setSavingModulePrice(null);
+                        }
+                      }}
+                      disabled={savingModulePrice === normalizedTitle}
+                      className="min-w-[96px]"
+                    >
+                      {savingModulePrice === normalizedTitle ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving
+                        </>
+                      ) : (
+                        "Save"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </GlassCard>
+
+      <GlassCard className="p-6 space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex-1 min-w-[250px]">
             <div className="relative">
@@ -1124,6 +1346,19 @@ const AdminDashboard = () => {
                   onChange={(e) => setQuestionForm((prev) => ({ ...prev, question: e.target.value }))}
                   rows={3}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hint">Hint (optional)</Label>
+                <Textarea
+                  id="hint"
+                  placeholder="Share a gentle nudge or thinking direction for candidates"
+                  value={questionForm.hint}
+                  onChange={(e) => setQuestionForm((prev) => ({ ...prev, hint: e.target.value }))}
+                  rows={3}
+                />
+                <p className="text-xs text-muted-foreground">
+                  This hint will appear on the question page (and dedicated hint page) to guide learners before revealing the full solution.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="answer">Answer / Explanation</Label>

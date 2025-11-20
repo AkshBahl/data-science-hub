@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Briefcase, Loader2, Terminal, Code2, FileText, Lightbulb, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -23,6 +23,7 @@ type InterviewQuestion = {
   expectedOutput?: string;
   difficulty?: "easy" | "medium" | "hard";
   company?: string;
+  hint?: string;
 };
 
 // Helper function to detect language from module title
@@ -51,9 +52,6 @@ const QuestionDetail = () => {
   const [activeTab, setActiveTab] = useState("question");
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [output, setOutput] = useState<{ columns: string[]; values: any[][] } | null>(null);
-  const [textOutput, setTextOutput] = useState<string | null>(null);
-  const [validationResult, setValidationResult] = useState<{ passed: boolean; message?: string } | null>(null);
   const [editorHeight, setEditorHeight] = useState(600);
 
   // Scroll to top when component mounts
@@ -102,6 +100,7 @@ const QuestionDetail = () => {
             expectedOutput: data.expectedOutput,
             difficulty: data.difficulty,
             company: data.company,
+            hint: data.hint,
           } as InterviewQuestion);
         } else {
           toast({
@@ -209,10 +208,10 @@ const QuestionDetail = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="h-screen flex flex-col">
+      <div className="flex flex-col min-h-screen">
         {/* Header with Back button and Language badge */}
         <div className="px-4 lg:px-6 py-3 border-b border-border/50 bg-background/95 backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-4">
             <Button 
               variant="ghost" 
               className="px-3 hover:bg-muted/50 transition-colors" 
@@ -262,6 +261,17 @@ const QuestionDetail = () => {
                 <Code2 className="h-3.5 w-3.5 text-primary" />
                 <span className="font-medium text-primary">{language.toUpperCase()}</span>
               </Badge>
+              {question.hint && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 border-primary/40 text-primary hover:bg-primary/10"
+                  onClick={() => navigate(`/interview-prep/question/${question.id}/hint`)}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Hint Page
+                </Button>
+              )}
             </div>
           </div>
           <h1 className="text-xl lg:text-2xl font-bold mt-3">
@@ -269,16 +279,24 @@ const QuestionDetail = () => {
           </h1>
         </div>
 
-        {/* Main content: Three-column layout */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px,1fr,350px] overflow-hidden">
+        {/* Main content */}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px,1fr]">
           {/* Left Panel: Question */}
-          <div className="flex flex-col h-full overflow-hidden border-r border-border/50 bg-background">
+          <div className="flex flex-col border-r border-border/50 bg-background min-h-[500px]">
             <div className="p-4 border-b border-border/50">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="w-full">
                   <TabsTrigger value="question" className="flex-1">
                     <FileText className="h-4 w-4 mr-2" />
                     Question
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="hint"
+                    disabled={!question.hint}
+                    className="flex-1"
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Hint
                   </TabsTrigger>
                   <TabsTrigger 
                     value="solution" 
@@ -305,6 +323,28 @@ const QuestionDetail = () => {
                   </div>
                 </TabsContent>
 
+                <TabsContent value="hint" className="mt-0">
+                  {question.hint ? (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                      <div className="flex items-center gap-2 text-primary font-semibold text-sm uppercase tracking-wide">
+                        <Sparkles className="h-4 w-4" />
+                        Quick Hint
+                      </div>
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
+                        {question.hint.split("\n").map((line, idx) => (
+                          <p key={idx} className="mb-2 last:mb-0">
+                            {line || '\u00A0'}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
+                      No hint has been added yet for this question.
+                    </div>
+                  )}
+                </TabsContent>
+
                 <TabsContent value="solution" className="mt-0">
                   {currentUser ? (
                     <div className="rounded-lg bg-muted/30 border border-border/50 p-4">
@@ -329,7 +369,7 @@ const QuestionDetail = () => {
           </div>
 
           {/* Middle Panel: Code Editor */}
-          <div className="flex flex-col h-full overflow-hidden border-r border-border/50 bg-background">
+          <div className="flex flex-col bg-background min-h-[500px]">
             {currentUser ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-border/50 bg-muted/20 flex-shrink-0">
@@ -345,14 +385,6 @@ const QuestionDetail = () => {
                     questionId={question.id}
                     height={`${editorHeight}px`}
                     expectedOutput={question.expectedOutput}
-                    hideOutput={true}
-                    onOutputChange={(out, textOut) => {
-                      setOutput(out);
-                      setTextOutput(textOut);
-                    }}
-                    onValidationChange={(result) => {
-                      setValidationResult(result);
-                    }}
                   />
                 </div>
               </div>
@@ -374,79 +406,6 @@ const QuestionDetail = () => {
             )}
           </div>
 
-          {/* Right Panel: Output */}
-          <div className="flex flex-col h-full overflow-hidden bg-background">
-            <div className="p-4 border-b border-border/50 bg-muted/20">
-              <div className="flex items-center gap-2">
-                <Terminal className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold text-foreground">Output</span>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-              {validationResult && (
-                <div className={`mb-4 rounded-lg border-2 p-3 ${
-                  validationResult.passed 
-                    ? "border-green-500/60 bg-green-500/10" 
-                    : "border-red-500/60 bg-red-500/10"
-                }`}>
-                  <div className="flex items-center gap-2">
-                    {validationResult.passed ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-400" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-red-400" />
-                    )}
-                    <span className={`text-xs font-semibold ${
-                      validationResult.passed ? "text-green-400" : "text-red-400"
-                    }`}>
-                      {validationResult.passed ? "✓ Correct!" : "✗ Incorrect"}
-                    </span>
-                  </div>
-                  {validationResult.message && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {validationResult.message}
-                    </p>
-                  )}
-                </div>
-              )}
-              
-              {output && output.columns.length > 0 && output.values.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border/50 bg-muted/30">
-                        {output.columns.map((col, idx) => (
-                          <th key={idx} className="px-3 py-2 text-left font-semibold text-foreground">
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {output.values.map((row, rowIdx) => (
-                        <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20">
-                          {row.map((cell, cellIdx) => (
-                            <td key={cellIdx} className="px-3 py-2 text-foreground/90">
-                              {String(cell)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : textOutput ? (
-                <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
-                  <pre className="text-xs text-foreground/90 font-mono whitespace-pre-wrap overflow-x-auto">
-                    {textOutput}
-                  </pre>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full text-center">
-                  <p className="text-sm text-muted-foreground">Run code to see output</p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
       <AuthModal
