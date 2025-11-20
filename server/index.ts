@@ -77,7 +77,8 @@ app.post("/api/razorpay/verify", (req, res) => {
   }
 });
 
-const PORT = Number(process.env.SERVER_PORT) || 5000;
+const PORT = Number(process.env.PORT) || Number(process.env.SERVER_PORT) || 5000;
+
 
 app.listen(PORT, () => {
   console.log(`Razorpay server running on http://localhost:${PORT}`);
