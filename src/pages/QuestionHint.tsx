@@ -4,7 +4,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import GlassCard from "@/components/GlassCard";
-import { ArrowLeft, FileText, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, FileText, Loader2, Sparkles, Eye } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ type HintQuestion = {
   company?: string;
   difficulty?: "easy" | "medium" | "hard";
   hint?: string;
+  expectedOutput?: string;
 };
 
 const QuestionHint = () => {
@@ -51,6 +52,7 @@ const QuestionHint = () => {
             company: data.company,
             difficulty: data.difficulty,
             hint: data.hint,
+            expectedOutput: data.expectedOutput,
           });
         } else {
           toast({
@@ -165,6 +167,20 @@ const QuestionHint = () => {
                 </div>
               )}
             </div>
+
+            {question.expectedOutput && (
+              <div>
+                <h2 className="text-lg font-semibold mb-2 flex items-center gap-2 text-green-500">
+                  <Eye className="h-4 w-4" />
+                  Expected Output
+                </h2>
+                <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-5">
+                  <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto">
+                    {question.expectedOutput}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
         </GlassCard>
       </div>

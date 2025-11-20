@@ -1070,38 +1070,6 @@ sys.stdout = StringIO()
         </div>
       )}
 
-      {language === "sql" && (
-        <div className="text-sm text-foreground/80 bg-gradient-to-br from-primary/5 to-primary/10 border-2 border-primary/20 p-4 rounded-xl">
-          <p className="font-bold mb-3 text-foreground flex items-center gap-2">
-            <Terminal className="h-4 w-4 text-primary" />
-            Available tables for practice:
-          </p>
-          <ul className="space-y-2 ml-1">
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-0.5">•</span>
-              <span>
-                <code className="bg-background/60 border border-primary/20 px-2 py-0.5 rounded font-mono text-xs font-semibold text-primary">employees</code>
-                <span className="ml-2 text-muted-foreground">id, name, department, salary, hire_date</span>
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-0.5">•</span>
-              <span>
-                <code className="bg-background/60 border border-primary/20 px-2 py-0.5 rounded font-mono text-xs font-semibold text-primary">products</code>
-                <span className="ml-2 text-muted-foreground">id, name, category, price, stock</span>
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-0.5">•</span>
-              <span>
-                <code className="bg-background/60 border border-primary/20 px-2 py-0.5 rounded font-mono text-xs font-semibold text-primary">orders</code>
-                <span className="ml-2 text-muted-foreground">id, product_id, employee_id, quantity, order_date</span>
-              </span>
-            </li>
-          </ul>
-        </div>
-      )}
-
       <Dialog open={showXpModal} onOpenChange={setShowXpModal}>
         <DialogContent className="max-w-sm text-center space-y-4">
           <DialogHeader>

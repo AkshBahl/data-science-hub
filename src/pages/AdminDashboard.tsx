@@ -21,6 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import {
@@ -159,6 +160,7 @@ const AdminDashboard = () => {
   const [userSearch, setUserSearch] = useState("");
   const [questionSearch, setQuestionSearch] = useState("");
   const [titleSearchOpen, setTitleSearchOpen] = useState(false);
+  const [expectedOutputHelperOpen, setExpectedOutputHelperOpen] = useState(false);
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
   const [isCaseDialogOpen, setIsCaseDialogOpen] = useState(false);
   const [isSavingCaseStudy, setIsSavingCaseStudy] = useState(false);
@@ -1371,16 +1373,85 @@ const AdminDashboard = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expectedOutput">Expected Output (for validation)</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="expectedOutput">Expected Output (for validation)</Label>
+                  {(questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql")) && (
+                    <Collapsible open={expectedOutputHelperOpen} onOpenChange={setExpectedOutputHelperOpen}>
+                      <CollapsibleTrigger asChild>
+                        <Button type="button" variant="ghost" size="sm" className="h-auto py-1 text-xs">
+                          {expectedOutputHelperOpen ? "Hide" : "Show"} SQL Format Helper
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-2">
+                        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3 text-sm">
+                          <div>
+                            <p className="font-semibold mb-2">SQL Expected Output Format:</p>
+                            <p className="text-xs text-muted-foreground mb-3">
+                              SQL queries return results as tables. Format your expected output as JSON with <code className="bg-background/60 px-1 py-0.5 rounded">columns</code> and <code className="bg-background/60 px-1 py-0.5 rounded">values</code> arrays.
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-semibold mb-2 text-xs">Example Table Result:</p>
+                            <div className="bg-background/60 border border-border/50 rounded p-2 mb-2 text-xs font-mono">
+                              <div className="grid grid-cols-3 gap-2 mb-1 font-semibold border-b border-border/50 pb-1">
+                                <div>id</div>
+                                <div>name</div>
+                                <div>salary</div>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>1</div>
+                                <div>John</div>
+                                <div>50000</div>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>2</div>
+                                <div>Jane</div>
+                                <div>60000</div>
+                              </div>
+                            </div>
+                            <p className="font-semibold mb-2 text-xs">JSON Format:</p>
+                            <pre className="bg-background/80 border border-border/50 rounded p-2 text-xs overflow-x-auto">
+{`{
+  "columns": ["id", "name", "salary"],
+  "values": [
+    [1, "John", 50000],
+    [2, "Jane", 60000]
+  ]
+}`}
+                            </pre>
+                          </div>
+                          <div className="pt-2 border-t border-border/50">
+                            <p className="text-xs text-muted-foreground">
+                              <strong>Tips:</strong> Column names are case-insensitive. Values are compared after trimming whitespace. Row order doesn't matter (rows are sorted before comparison).
+                            </p>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
+                </div>
                 <Textarea
                   id="expectedOutput"
-                  placeholder='For SQL: JSON format {"columns": ["col1"], "values": [[val1]]}. For Python/JavaScript: exact output text'
+                  placeholder={
+                    (questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql"))
+                      ? 'JSON format: {"columns": ["col1", "col2"], "values": [[val1, val2], [val3, val4]]}'
+                      : 'For Python/JavaScript: exact output text. For SQL: JSON format with columns and values arrays.'
+                  }
                   value={questionForm.expectedOutput}
                   onChange={(e) => setQuestionForm((prev) => ({ ...prev, expectedOutput: e.target.value }))}
                   rows={4}
+                  className="font-mono text-xs"
                 />
                 <p className="text-xs text-muted-foreground">
-                  For SQL questions: Provide JSON with columns and values arrays. For Python/JavaScript: Provide the exact expected output text. This will be used to validate user solutions. Leave empty if validation is not needed.
+                  {((questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql"))) ? (
+                    <>
+                      <strong>SQL/MySQL:</strong> Provide JSON with <code className="bg-background/60 px-1 py-0.5 rounded">columns</code> and <code className="bg-background/60 px-1 py-0.5 rounded">values</code> arrays matching the table structure. Click "Show SQL Format Helper" above for examples.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Python/JavaScript:</strong> Provide the exact expected output text. <strong>SQL/MySQL:</strong> Provide JSON with columns and values arrays. This will be used to validate user solutions. Leave empty if validation is not needed.
+                    </>
+                  )}
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

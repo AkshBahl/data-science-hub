@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, GripVertical, Eye } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -53,11 +53,28 @@ const QuestionDetail = () => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [editorHeight, setEditorHeight] = useState(600);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
+    const saved = localStorage.getItem("questionDetailLeftPanelWidth");
+    return saved ? parseFloat(saved) : 40; // Default 40%
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [questionId]);
+
+  // Track desktop vs mobile
+  useEffect(() => {
+    const updateIsDesktop = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    updateIsDesktop();
+    window.addEventListener('resize', updateIsDesktop);
+    return () => window.removeEventListener('resize', updateIsDesktop);
+  }, []);
 
   // Calculate editor height based on viewport
   useEffect(() => {
@@ -70,6 +87,49 @@ const QuestionDetail = () => {
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
+
+  // Save panel width to localStorage
+  useEffect(() => {
+    localStorage.setItem("questionDetailLeftPanelWidth", leftPanelWidth.toString());
+  }, [leftPanelWidth]);
+
+  // Handle resizing
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !containerRef.current) return;
+
+      const container = containerRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+
+      // Constrain between 20% and 70%
+      const constrainedWidth = Math.max(20, Math.min(70, newLeftWidth));
+      setLeftPanelWidth(constrainedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
 
   // Fetch question
   useEffect(() => {
@@ -280,9 +340,19 @@ const QuestionDetail = () => {
         </div>
 
         {/* Main content */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px,1fr]">
+        <div 
+          ref={containerRef}
+          className="flex-1 flex flex-col lg:flex-row overflow-hidden"
+        >
           {/* Left Panel: Question */}
-          <div className="flex flex-col border-r border-border/50 bg-background min-h-[500px]">
+          <div 
+            className="flex flex-col bg-background min-h-[500px] transition-none border-r border-border/50"
+            style={{ 
+              width: isDesktop ? `${leftPanelWidth}%` : '100%',
+              minWidth: isDesktop ? '20%' : '100%',
+              maxWidth: isDesktop ? '70%' : '100%'
+            }}
+          >
             <div className="p-4 border-b border-border/50">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="w-full">
@@ -297,6 +367,14 @@ const QuestionDetail = () => {
                   >
                     <Sparkles className="h-4 w-4 mr-2" />
                     Hint
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="expectedOutput"
+                    disabled={!question.expectedOutput || !question.expectedOutput.trim()}
+                    className="flex-1"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Expected Output
                   </TabsTrigger>
                   <TabsTrigger 
                     value="solution" 
@@ -325,7 +403,7 @@ const QuestionDetail = () => {
 
                 <TabsContent value="hint" className="mt-0">
                   {question.hint ? (
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
                       <div className="flex items-center gap-2 text-primary font-semibold text-sm uppercase tracking-wide">
                         <Sparkles className="h-4 w-4" />
                         Quick Hint
@@ -341,6 +419,26 @@ const QuestionDetail = () => {
                   ) : (
                     <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
                       No hint has been added yet for this question.
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="expectedOutput" className="mt-0">
+                  {question.expectedOutput && question.expectedOutput.trim() ? (
+                    <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4 space-y-3">
+                      <div className="flex items-center gap-2 text-green-500 font-semibold text-sm uppercase tracking-wide">
+                        <Eye className="h-4 w-4" />
+                        Expected Output
+                      </div>
+                      <div className="rounded-md bg-background/60 border border-border/50 p-3">
+                        <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto">
+                          {question.expectedOutput}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
+                      No expected output has been added for this question yet.
                     </div>
                   )}
                 </TabsContent>
@@ -368,8 +466,28 @@ const QuestionDetail = () => {
             </div>
           </div>
 
-          {/* Middle Panel: Code Editor */}
-          <div className="flex flex-col bg-background min-h-[500px]">
+          {/* Resizer */}
+          {isDesktop && (
+            <div
+              onMouseDown={handleMouseDown}
+              className={`w-1 bg-border/50 hover:bg-primary/50 cursor-col-resize transition-colors flex items-center justify-center group relative ${
+                isResizing ? 'bg-primary' : ''
+              }`}
+              style={{ flexShrink: 0 }}
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 flex items-center justify-center">
+                <GripVertical className="h-5 w-5 text-muted-foreground group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </div>
+          )}
+
+          {/* Right Panel: Code Editor */}
+          <div 
+            className="flex flex-col bg-background min-h-[500px] flex-1"
+            style={{ 
+              width: isDesktop ? `${100 - leftPanelWidth}%` : '100%'
+            }}
+          >
             {currentUser ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-border/50 bg-muted/20 flex-shrink-0">
