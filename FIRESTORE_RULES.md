@@ -56,7 +56,12 @@ service cloud.firestore {
     match /users/{userId} {
       // Allow public read access for leaderboard (limited fields)
       allow read: if true; // Public read for leaderboard display
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // Allow users to update their own profile fields and XP
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && onlyUpdatesAllowedFields(['displayName','linkedinUrl','updatedAt','xp']);
+      // Allow users to create their own profile (on first login)
+      allow create: if request.auth != null && request.auth.uid == userId;
       // Admins can read/write any user
       allow read, write: if request.auth != null && 
                            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
@@ -65,8 +70,12 @@ service cloud.firestore {
     // Allow public read access to user question submissions for status tracking
     match /userQuestionSubmissions/{submissionId} {
       allow read: if true; // Public read for checking completion status
-      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
+      // Allow create if user is creating their own submission
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      // Allow update if user is updating their own submission
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
+      // Allow delete if user is deleting their own submission
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
   }
 }

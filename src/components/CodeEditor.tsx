@@ -6,7 +6,7 @@ import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal, Trophy } from "l
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { db as firestoreDb } from "@/lib/firebase";
-import { doc, getDoc, setDoc, serverTimestamp, increment } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "firebase/firestore";
 import initSqlJs, { Database } from "sql.js";
 import { executeCode, isJudge0Configured, getSupportedLanguages } from "@/services/codeExecution";
 import "@/lib/monaco-config";
@@ -19,11 +19,127 @@ interface CodeEditorProps {
   questionId?: string; // Question ID for tracking completion
   expectedOutput?: string; // Expected output for validation
   hideOutput?: boolean; // Hide output section (for separate display)
+  sqlTableNames?: string; // Comma-separated table names for SQL questions
   onOutputChange?: (output: { columns: string[]; values: any[][] } | null, textOutput: string | null) => void; // Callback for output changes
   onValidationChange?: (result: { passed: boolean; message?: string } | null) => void; // Callback for validation changes
 }
 
-const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, questionId, expectedOutput, hideOutput = false, onOutputChange, onValidationChange }: CodeEditorProps) => {
+type ParsedSqlTable = {
+  originalName: string;
+  tableName: string;
+  columns: string[];
+  values: any[][];
+};
+
+const sanitizeIdentifier = (value: string, fallback: string) => {
+  if (!value) return fallback;
+  const cleaned = value
+    .toString()
+    .trim()
+    .replace(/[^A-Za-z0-9_]/g, "_")
+    .replace(/_{2,}/g, "_");
+  const noLeadingDigits = cleaned.replace(/^[^A-Za-z_]+/, "");
+  return noLeadingDigits || fallback;
+};
+
+const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: string): ParsedSqlTable[] => {
+  if (!questionText) return [];
+  const tables: ParsedSqlTable[] = [];
+  const regex = /\{[\s\S]*?"columns"[\s\S]*?"values"[\s\S]*?\}/g;
+  let match: RegExpExecArray | null;
+  
+  // Parse admin-provided table names (comma-separated)
+  const adminTableNamesList: string[] = adminTableNames
+    ? adminTableNames.split(',').map(name => name.trim().toLowerCase()).filter(name => name.length > 0)
+    : [];
+
+  // Try to extract table names mentioned in the question text (e.g., "FROM customers", "table: customers", "customers table")
+  const tableNamePatterns = [
+    /(?:FROM|from)\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /(?:table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+    /SQL\s+table[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /using\s+the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+    /the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+  ];
+  const mentionedTables: string[] = [];
+  tableNamePatterns.forEach(pattern => {
+    // Reset regex lastIndex for global regex
+    pattern.lastIndex = 0;
+    let m;
+    while ((m = pattern.exec(questionText)) !== null) {
+      if (m[1]) {
+        const tableName = m[1].toLowerCase();
+        // Skip common SQL keywords and generic words
+        const skipWords = ['select', 'where', 'group', 'order', 'having', 'limit', 'join', 'inner', 'left', 'right', 'outer', 'on', 'as', 'and', 'or', 'not', 'in', 'exists', 'like', 'between'];
+        if (!skipWords.includes(tableName) && !mentionedTables.includes(tableName)) {
+          mentionedTables.push(tableName);
+        }
+      }
+    }
+  });
+
+  console.log("Extracted mentioned tables from question:", mentionedTables);
+  console.log("Question text sample:", questionText?.substring(0, 300));
+
+  while ((match = regex.exec(questionText)) !== null) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed.columns) || !Array.isArray(parsed.values)) continue;
+      // Try to get table name from various possible fields (support both camelCase and snake_case)
+      let rawName =
+        (typeof parsed.tableName === "string" && parsed.tableName.trim()) ||
+        (typeof parsed.table_name === "string" && parsed.table_name.trim()) ||
+        (typeof parsed.name === "string" && parsed.name.trim()) ||
+        (typeof parsed.table === "string" && parsed.table.trim());
+      
+      console.log("JSON table found, rawName from JSON:", rawName);
+      console.log("Current tables.length:", tables.length);
+      console.log("mentionedTables:", mentionedTables);
+      
+      // If no table name in JSON, try to use admin-provided names first, then mentioned tables, then fallback
+      if (!rawName) {
+        if (adminTableNamesList.length > 0 && tables.length < adminTableNamesList.length) {
+          // Use admin-provided table names in order
+          rawName = adminTableNamesList[tables.length];
+          console.log("Using admin-provided table name:", rawName);
+        } else if (mentionedTables.length > 0) {
+          // Use the first mentioned table for the first JSON block, second for second, etc.
+          rawName = mentionedTables[Math.min(tables.length, mentionedTables.length - 1)];
+          console.log("Using mentioned table name:", rawName);
+        } else {
+          // Fallback to generic name only if no table names were mentioned
+          rawName = `dataset_${tables.length + 1}`;
+          console.log("No mentioned tables found, using fallback:", rawName);
+        }
+      }
+      
+      // Normalize to lowercase for consistency, but preserve original case for display
+      const normalizedRawName = rawName.toLowerCase();
+      
+      // Use the raw name directly if it's a valid SQL identifier, otherwise sanitize
+      const tableName = /^[A-Za-z_][A-Za-z0-9_]*$/.test(normalizedRawName) 
+        ? normalizedRawName 
+        : sanitizeIdentifier(normalizedRawName, `dataset_${tables.length + 1}`);
+      const columns = parsed.columns.map((col: string, idx: number) =>
+        sanitizeIdentifier(col, `column_${idx + 1}`),
+      );
+      const values = Array.isArray(parsed.values) ? parsed.values : [];
+      tables.push({
+        originalName: rawName.toLowerCase(), // Store lowercase for consistency
+        tableName: tableName.toLowerCase(), // Ensure lowercase
+        columns,
+        values,
+      });
+    } catch {
+      // ignore malformed JSON blocks
+    }
+  }
+
+  return tables;
+};
+
+const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, questionId, expectedOutput, hideOutput = false, sqlTableNames, onOutputChange, onValidationChange }: CodeEditorProps) => {
   const { currentUser } = useAuth();
   const [hasAwardedXP, setHasAwardedXP] = useState(false);
   // Get comment syntax based on language
@@ -36,12 +152,14 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   };
 
   // Get starter code based on language
-  const getStarterCode = (lang: string): string => {
+  const getStarterCode = (lang: string, firstTableName?: string): string => {
     switch (lang) {
       case "python":
         return "# Write your Python solution here\nprint('Hello, World!')";
       case "sql":
-        return "SELECT * FROM employees LIMIT 5;";
+        // Use the first available table name, or a generic one
+        const tableName = firstTableName || "customers";
+        return `SELECT * FROM ${tableName} LIMIT 5;`;
       case "javascript":
         return "// Write your JavaScript solution here\nconsole.log('Hello, World!');";
       case "typescript":
@@ -69,20 +187,60 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     let initialCode = "";
     
     if (question) {
-      // Add question as a comment at the top
-      const questionLines = question.split("\n").map(line => `${commentPrefix} ${line}`).join("\n");
-      const solutionPrompt = language === "sql" 
-        ? `${commentPrefix} Write your SQL solution below:`
-        : `${commentPrefix} Write your ${language} solution below:`;
-      initialCode = `${questionLines}\n\n${solutionPrompt}\n`;
+      // Remove JSON blocks from question text before adding as comments
+      // This prevents JSON table definitions from appearing in the editor
+      let cleanedQuestion = question;
+      
+      // Remove JSON blocks that match table structure pattern
+      cleanedQuestion = cleanedQuestion.replace(/\{[\s\S]*?"columns"[\s\S]*?"values"[\s\S]*?\}/g, '');
+      
+      // Remove any remaining standalone JSON-like structures
+      cleanedQuestion = cleanedQuestion.replace(/\{[^{}]*\}/g, '');
+      
+      // Clean up extra whitespace
+      cleanedQuestion = cleanedQuestion.replace(/\n{3,}/g, '\n\n').trim();
+      
+      // Add question text as comments (without JSON blocks)
+      if (cleanedQuestion) {
+        const questionLines = cleanedQuestion.split("\n")
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map(line => `${commentPrefix} ${line}`)
+          .join("\n");
+        const solutionPrompt = language === "sql" 
+          ? `${commentPrefix} Write your SQL solution below:`
+          : `${commentPrefix} Write your ${language} solution below:`;
+        initialCode = `${questionLines}\n\n${solutionPrompt}\n`;
+      } else {
+        // If question was only JSON, just add the prompt
+        const solutionPrompt = language === "sql" 
+          ? `${commentPrefix} Write your SQL solution below:`
+          : `${commentPrefix} Write your ${language} solution below:`;
+        initialCode = `${solutionPrompt}\n`;
+      }
     } else {
       initialCode = `${commentPrefix} Write your ${language} code here\n`;
     }
     
-    // Add starter code
-    initialCode += getStarterCode(language);
+    // Add starter code - for SQL, try to use the first table name from question
+    let firstTableName: string | undefined;
+    if (language === "sql" && question) {
+      // Try to extract first table name from admin-provided names
+      if (sqlTableNames) {
+        const names = sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0);
+        if (names.length > 0) firstTableName = names[0];
+      }
+      // If not found, try to extract from question text
+      if (!firstTableName) {
+        const tableMatch = question.match(/(?:FROM|from|table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/i);
+        if (tableMatch && tableMatch[1]) {
+          firstTableName = tableMatch[1].toLowerCase();
+        }
+      }
+    }
+    initialCode += getStarterCode(language, firstTableName);
     return initialCode;
-  }, [defaultValue, question, language]);
+  }, [defaultValue, question, language, sqlTableNames]);
 
   const [code, setCode] = useState(getInitialCode);
   const [output, setOutput] = useState<{ columns: string[]; values: any[][] } | null>(null);
@@ -91,6 +249,11 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const [validationResult, setValidationResult] = useState<{ passed: boolean; message?: string } | null>(null);
   const [showXpModal, setShowXpModal] = useState(false);
   const { toast: toastHook } = useToast();
+
+  // Debug: Log when modal state changes
+  useEffect(() => {
+    console.log("showXpModal state changed:", showXpModal);
+  }, [showXpModal]);
 
   // Reset hasAwardedXP when questionId changes
   useEffect(() => {
@@ -113,7 +276,15 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
   // Function to track question completion and award XP
   const trackQuestionCompletion = async (questionId: string) => {
-    if (!currentUser || !questionId || hasAwardedXP) return false;
+    if (!currentUser || !questionId) {
+      console.log("trackQuestionCompletion: Missing user or questionId", { currentUser: !!currentUser, questionId });
+      return false;
+    }
+
+    if (hasAwardedXP) {
+      console.log("trackQuestionCompletion: XP already awarded for this session");
+      return false;
+    }
 
     try {
       // Check if already completed
@@ -121,16 +292,26 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       const submissionSnap = await getDoc(submissionRef);
 
       if (submissionSnap.exists() && submissionSnap.data().status === "completed") {
+        console.log("trackQuestionCompletion: Question already completed previously");
         return false; // Already completed
       }
 
-      // Mark as completed
-      await setDoc(submissionRef, {
-        userId: currentUser.uid,
-        questionId: questionId,
-        status: "completed",
-        completedAt: serverTimestamp(),
-      }, { merge: true });
+      // Mark as completed - use setDoc for create, updateDoc for update
+      if (submissionSnap.exists()) {
+        // Update existing document
+        await updateDoc(submissionRef, {
+          status: "completed",
+          completedAt: serverTimestamp(),
+        });
+      } else {
+        // Create new document
+        await setDoc(submissionRef, {
+          userId: currentUser.uid,
+          questionId: questionId,
+          status: "completed",
+          completedAt: serverTimestamp(),
+        });
+      }
 
       // Award XP (25 points per question)
       const userRef = doc(firestoreDb, "users", currentUser.uid);
@@ -140,23 +321,40 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       }, { merge: true });
 
       setHasAwardedXP(true);
-      toastHook({
-        title: "🎉 Question Completed!",
-        description: "You earned 25 XP!",
-      });
+      console.log("trackQuestionCompletion: XP awarded successfully, returning true");
+      // Don't show toast here, let the modal handle it
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error tracking completion:", error);
+      console.error("Error details:", {
+        code: error?.code,
+        message: error?.message,
+        userId: currentUser?.uid,
+        questionId: questionId
+      });
+      toastHook({
+        title: "Error",
+        description: error?.message || "Failed to track completion. Please try again.",
+        variant: "destructive",
+      });
       return false;
     }
   };
   const [sqlJs, setSqlJs] = useState<any>(null);
   const [db, setDb] = useState<Database | null>(null);
   const [pyodide, setPyodide] = useState<any>(null);
+  const [availableTables, setAvailableTables] = useState<string[]>([]);
   const { toast } = useToast();
   const dbInitialized = useRef(false);
   const dbRef = useRef<Database | null>(null);
   const pyodideLoading = useRef(false);
+  const questionTables = useMemo(() => {
+    const tables = extractSqlTablesFromQuestion(question, sqlTableNames);
+    console.log("Extracted SQL tables from question:", tables);
+    console.log("Question text:", question?.substring(0, 500)); // Log first 500 chars
+    console.log("Admin-provided table names:", sqlTableNames);
+    return tables;
+  }, [question, sqlTableNames]);
 
   // Function to normalize and compare outputs
   const compareOutputs = (
@@ -254,6 +452,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         dbRef.current = null;
       }
       setDb(null);
+      setAvailableTables([]);
     }
   }, [getInitialCode, language]);
 
@@ -284,20 +483,43 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     }
   }, [language, pyodide, toast]);
 
-  // Initialize SQL.js for SQL execution
+  // Initialize SQL.js runtime when needed
   useEffect(() => {
-    if (language === "sql" && !dbInitialized.current) {
-      const initDb = async () => {
+    if (language !== "sql" || sqlJs) return;
+    let cancelled = false;
+
+    const loadSqlJs = async () => {
         try {
           const SQL = await initSqlJs({
             locateFile: (file) => `https://sql.js.org/dist/${file}`,
           });
+        if (!cancelled) {
           setSqlJs(SQL);
-          
-          // Create a sample database with some tables for demonstration
-          const database = new SQL.Database();
-          
-          // Create sample tables for SQL practice
+        }
+      } catch (error) {
+        console.error("Failed to initialize SQL.js:", error);
+        if (!cancelled) {
+          toast({
+            title: "SQL environment not available",
+            description: "SQL execution may not work. Please refresh the page.",
+            variant: "destructive",
+          });
+        }
+      }
+    };
+
+    loadSqlJs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [language, sqlJs, toast]);
+
+  // Build SQL database using question tables (or fallback sample data)
+  useEffect(() => {
+    if (language !== "sql" || !sqlJs) return;
+
+    const createSampleDatabase = (database: any) => {
           database.run(`
             CREATE TABLE employees (
               id INTEGER PRIMARY KEY,
@@ -350,42 +572,96 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           
           database.run(`
             INSERT INTO orders (product_id, employee_id, quantity, order_date) VALUES
-            (1, 1, 2, '2024-01-10'),
-            (2, 2, 5, '2024-01-12'),
-            (3, 1, 1, '2024-01-15'),
-            (4, 3, 3, '2024-01-18'),
-            (5, 2, 4, '2024-01-20');
+        (1, 1, 2, '2023-01-10'),
+        (2, 2, 5, '2023-02-15'),
+        (3, 3, 1, '2023-03-05'),
+        (4, 4, 3, '2023-04-20'),
+        (5, 5, 4, '2023-05-25');
           `);
+
+      setAvailableTables(["employees", "products", "orders"]);
+    };
+
+    const buildQuestionTables = (database: any) => {
+      const names: string[] = [];
+
+      questionTables.forEach((table, index) => {
+        // Prefer originalName if it's a valid SQL identifier, otherwise use tableName
+        // Normalize to lowercase for consistency
+        let tableName = (table.originalName && /^[A-Za-z_][A-Za-z0-9_]*$/.test(table.originalName))
+          ? table.originalName.toLowerCase()
+          : (table.tableName || `dataset_${index + 1}`);
+        // Ensure it's lowercase
+        tableName = tableName.toLowerCase();
+        names.push(tableName);
+
+        const columnDefinitions = table.columns
+          .map((col) => `"${col.replace(/"/g, '""')}" TEXT`)
+          .join(", ");
+        database.run(`CREATE TABLE "${tableName}" (${columnDefinitions});`);
+
+        const placeholders = table.columns.map(() => "?").join(", ");
+        const insertStmt = database.prepare(
+          `INSERT INTO "${tableName}" (${table.columns
+            .map((col) => `"${col.replace(/"/g, '""')}"`)
+            .join(", ")}) VALUES (${placeholders})`,
+        );
+
+        table.values.forEach((row) => {
+          const normalizedRow = Array.isArray(row) ? row.map((value) => value ?? null) : [];
+          insertStmt.run(normalizedRow);
+        });
+
+        insertStmt.free();
+      });
+
+      // Log created tables for debugging
+      console.log("Created SQL tables:", names);
+      setAvailableTables(names);
+    };
+
+    const setupDatabase = () => {
+      if (!sqlJs) return;
+
+      if (dbRef.current) {
+        dbRef.current.close();
+        dbRef.current = null;
+      }
+
+      const database = new sqlJs.Database();
+      if (questionTables.length > 0) {
+        buildQuestionTables(database);
+      } else {
+        createSampleDatabase(database);
+      }
           
           dbRef.current = database;
           setDb(database);
           dbInitialized.current = true;
-      } catch (error) {
-        console.error("Failed to initialize SQL.js:", error);
-        toast({
-          title: "Error initializing SQL compiler",
-          description: "Please refresh the page and try again.",
-          variant: "destructive",
-        });
-      }
     };
 
-      initDb();
-    }
+    setupDatabase();
 
     return () => {
       if (dbRef.current) {
         dbRef.current.close();
         dbRef.current = null;
       }
+      setDb(null);
+      setAvailableTables([]);
+      dbInitialized.current = false;
     };
-  }, [language, toast]);
+  }, [language, sqlJs, questionTables]);
 
   // Helper function to extract executable code (remove comments)
   const extractExecutableCode = (code: string, lang: string): string => {
     if (lang === "sql") {
+      // First, remove JSON blocks that might be in the code (from question text)
+      // This handles cases where JSON table data is included in comments
+      let cleanedCode = code.replace(/\{[^{}]*"columns"[^{}]*"values"[^{}]*\}/g, '');
+      
       // For SQL, remove single-line comments (-- and #)
-      return code
+      return cleanedCode
         .split('\n')
         .map(line => {
           // Remove -- comments
@@ -404,7 +680,17 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           }
           return line.trim();
         })
-        .filter(line => line.length > 0 && !line.startsWith('--') && !line.startsWith('#'))
+        .filter(line => {
+          // Filter out lines that are empty, comments, or contain JSON-like structures
+          const trimmed = line.trim();
+          if (trimmed.length === 0) return false;
+          if (trimmed.startsWith('--') || trimmed.startsWith('#')) return false;
+          // Filter out lines that look like JSON (contain { or } but aren't SQL)
+          if ((trimmed.includes('{') || trimmed.includes('}')) && !trimmed.match(/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)/i)) {
+            return false;
+          }
+          return true;
+        })
         .join('\n')
         .trim();
     } else if (lang === "python") {
@@ -542,7 +828,22 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         }
 
         // Execute the last query (or all queries if needed)
-        const query = queries[queries.length - 1].trim();
+        let query = queries[queries.length - 1].trim();
+        
+        // Normalize table names in the query to match created table names (case-insensitive)
+        // This helps when user writes "FROM customers" but table was created as "customers" (lowercase)
+        // SQLite is case-insensitive for ASCII, but we normalize to be safe
+        const tableNames = availableTables;
+        tableNames.forEach(tableName => {
+          // Replace table names in FROM/JOIN clauses (case-insensitive, whole word only)
+          // Match: FROM customers, JOIN customers, customers WHERE, etc.
+          const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`\\b${escapedTableName}\\b`, 'gi');
+          query = query.replace(regex, `"${tableName}"`);
+        });
+        
+        console.log("Executing SQL query:", query);
+        console.log("Available tables:", tableNames);
         
         if (query.toLowerCase().startsWith("select")) {
           // SELECT query - return results
@@ -557,6 +858,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             if (expectedOutput) {
               const validation = compareOutputs(outputData, expectedOutput);
               setValidationResult(validation);
+              console.log("Validation result:", validation);
               if (validation.passed) {
                 toast({
                   title: "✓ Solution Correct!",
@@ -564,10 +866,17 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
                 });
                 // Track completion and award XP
                 if (questionId) {
+                  console.log("Tracking completion for questionId:", questionId);
                   const xpAwarded = await trackQuestionCompletion(questionId);
+                  console.log("XP awarded result:", xpAwarded);
                   if (xpAwarded) {
+                    console.log("Setting showXpModal to true");
                     setShowXpModal(true);
+                  } else {
+                    console.log("XP not awarded, check trackQuestionCompletion logs");
                   }
+                } else {
+                  console.log("No questionId provided, cannot track completion");
                 }
               } else {
                 toast({
@@ -826,11 +1135,11 @@ sys.stdout = StringIO()
         // Check if language is supported by Judge0
         const supportedLanguages = getSupportedLanguages();
         if (!supportedLanguages.includes(language.toLowerCase())) {
-          setTextOutput(
+        setTextOutput(
             `Language ${language.toUpperCase()} is not currently supported.\n\n` +
             `Supported languages: ${supportedLanguages.join(', ')}`
-          );
-          toast({
+        );
+        toast({
             title: "Language not supported",
             description: `Please use one of the supported languages.`,
             variant: "destructive",
@@ -901,7 +1210,7 @@ sys.stdout = StringIO()
             title: "Execution Error",
             description: error.message || "An error occurred while executing the code.",
             variant: "destructive",
-          });
+        });
         }
       }
     } catch (error: any) {
@@ -927,8 +1236,8 @@ sys.stdout = StringIO()
               <Code2 className="h-3.5 w-3.5 text-primary" />
             </div>
             <span className="text-sm font-semibold text-foreground">
-              {language.toUpperCase()} Editor
-            </span>
+            {language.toUpperCase()} Editor
+          </span>
           </div>
           <Button
             onClick={handleRun}
@@ -956,30 +1265,43 @@ sys.stdout = StringIO()
             )}
           </Button>
         </div>
+        {language === "sql" && availableTables.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs border-b border-border/50 bg-muted/20">
+            <span className="text-muted-foreground">Tables available:</span>
+            {availableTables.map((name) => (
+              <code
+                key={name}
+                className="px-2 py-0.5 rounded bg-background border border-border/40 text-foreground font-semibold"
+              >
+                {name}
+              </code>
+            ))}
+          </div>
+        )}
         <div className="flex-1 min-h-0">
-          <Editor
-            height={height}
-            language={language}
-            value={code}
-            onChange={(value) => setCode(value || "")}
-            theme="vs-dark"
-            loading={<div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 12,
-              lineNumbers: "on",
-              roundedSelection: false,
-              scrollBeyondLastLine: false,
-              readOnly: false,
-              automaticLayout: true,
-              tabSize: 2,
-              wordWrap: "on",
-              scrollbar: {
-                vertical: "auto",
-                horizontal: "auto",
-              },
-            }}
-          />
+        <Editor
+          height={height}
+          language={language}
+          value={code}
+          onChange={(value) => setCode(value || "")}
+          theme="vs-dark"
+          loading={<div className="flex items-center justify-center h-full text-muted-foreground">Loading editor...</div>}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 12,
+            lineNumbers: "on",
+            roundedSelection: false,
+            scrollBeyondLastLine: false,
+            readOnly: false,
+            automaticLayout: true,
+            tabSize: 2,
+            wordWrap: "on",
+            scrollbar: {
+              vertical: "auto",
+              horizontal: "auto",
+            },
+          }}
+        />
         </div>
       </div>
 
@@ -1006,14 +1328,14 @@ sys.stdout = StringIO()
             <div className="flex-1">
               <span className={`text-sm font-bold block ${
                 validationResult.passed ? "text-green-400" : "text-red-400"
-              }`}>
+            }`}>
                 {validationResult.passed ? "✓ Solution Correct!" : "✗ Solution Incorrect"}
-              </span>
-              {validationResult.message && (
+            </span>
+            {validationResult.message && (
                 <span className="text-xs text-muted-foreground mt-1 block">
-                  {validationResult.message}
-                </span>
-              )}
+                {validationResult.message}
+              </span>
+            )}
             </div>
           </div>
         </div>
@@ -1027,8 +1349,8 @@ sys.stdout = StringIO()
                 <Terminal className="h-3.5 w-3.5 text-primary" />
               </div>
               <span className="text-sm font-semibold text-foreground">
-                Output
-              </span>
+              Output
+            </span>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -1092,7 +1414,7 @@ sys.stdout = StringIO()
               <Button onClick={() => { setShowXpModal(false); window.location.href = "/leaderboard"; }}>
                 View Leaderboard
               </Button>
-            </div>
+        </div>
           </div>
         </DialogContent>
       </Dialog>

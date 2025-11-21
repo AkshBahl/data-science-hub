@@ -66,6 +66,7 @@ type InterviewQuestion = {
   company?: string;
   questionOfTheWeek?: boolean; // Mark as Question of the Week
   hint?: string;
+  sqlTableNames?: string; // Comma-separated table names for SQL questions (e.g., "customers,orders,products")
 };
 
 type ManagedUser = {
@@ -133,6 +134,7 @@ type Testimonial = {
   message: string;
   highlight?: string;
   avatarUrl?: string;
+  linkedinUrl?: string;
   createdAt?: Date;
 };
 
@@ -162,6 +164,7 @@ const AdminDashboard = () => {
     company: "",
     questionOfTheWeek: false,
     hint: "",
+    sqlTableNames: "",
   });
   const [modulePricing, setModulePricing] = useState<Record<string, number>>({});
   const [modulePricingInputs, setModulePricingInputs] = useState<Record<string, string>>({});
@@ -240,6 +243,7 @@ const AdminDashboard = () => {
     message: "",
     highlight: "",
     avatarUrl: "",
+    linkedinUrl: "",
   });
 
   const handleLogout = async () => {
@@ -451,7 +455,7 @@ const AdminDashboard = () => {
 
   const openCreateDialog = () => {
     setEditingQuestion(null);
-    setQuestionForm({ title: "", questionTitle: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "", questionOfTheWeek: false, hint: "" });
+    setQuestionForm({ title: "", questionTitle: "", topic: "", question: "", answer: "", tier: "free", expectedOutput: "", difficulty: "", company: "", questionOfTheWeek: false, hint: "", sqlTableNames: "" });
     setTitleSearchOpen(false);
     setIsDialogOpen(true);
   };
@@ -470,6 +474,7 @@ const AdminDashboard = () => {
       company: question.company ?? "",
       questionOfTheWeek: question.questionOfTheWeek ?? false,
       hint: question.hint ?? "",
+      sqlTableNames: question.sqlTableNames ?? "",
     });
     setTitleSearchOpen(false);
     setIsDialogOpen(true);
@@ -513,6 +518,9 @@ const AdminDashboard = () => {
       }
       if (questionForm.hint.trim()) {
         questionData.hint = questionForm.hint.trim();
+      }
+      if (questionForm.sqlTableNames.trim()) {
+        questionData.sqlTableNames = questionForm.sqlTableNames.trim();
       }
       if (questionForm.questionOfTheWeek) {
         questionData.questionOfTheWeek = true;
@@ -1053,6 +1061,7 @@ const AdminDashboard = () => {
       message: "",
       highlight: "",
       avatarUrl: "",
+      linkedinUrl: "",
     });
   };
 
@@ -1066,6 +1075,7 @@ const AdminDashboard = () => {
         message: testimonial.message || "",
         highlight: testimonial.highlight || "",
         avatarUrl: testimonial.avatarUrl || "",
+        linkedinUrl: testimonial.linkedinUrl || "",
       });
     } else {
       setEditingTestimonial(null);
@@ -1093,6 +1103,7 @@ const AdminDashboard = () => {
         ...(testimonialForm.company.trim() && { company: testimonialForm.company.trim() }),
         ...(testimonialForm.highlight.trim() && { highlight: testimonialForm.highlight.trim() }),
         ...(testimonialForm.avatarUrl.trim() && { avatarUrl: testimonialForm.avatarUrl.trim() }),
+        ...(testimonialForm.linkedinUrl.trim() && { linkedinUrl: testimonialForm.linkedinUrl.trim() }),
       };
 
       if (editingTestimonial) {
@@ -1512,6 +1523,20 @@ const AdminDashboard = () => {
                   This hint will appear on the question page (and dedicated hint page) to guide learners before revealing the full solution.
                 </p>
               </div>
+              {(questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql")) && (
+                <div className="space-y-2">
+                  <Label htmlFor="sqlTableNames">SQL Table Names (optional)</Label>
+                  <Input
+                    id="sqlTableNames"
+                    placeholder="e.g., customers, orders, products"
+                    value={questionForm.sqlTableNames}
+                    onChange={(e) => setQuestionForm((prev) => ({ ...prev, sqlTableNames: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Comma-separated list of table names used in this SQL question. These will be used to create tables in the compiler. If not specified, table names will be extracted from the question text or JSON.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="answer">Answer / Explanation</Label>
                 <Textarea
@@ -2566,6 +2591,17 @@ const AdminDashboard = () => {
                 value={testimonialForm.avatarUrl}
                 onChange={(e) => setTestimonialForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
                 placeholder="https://images..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="testimonial-linkedin">LinkedIn URL (optional)</Label>
+              <Input
+                id="testimonial-linkedin"
+                type="url"
+                value={testimonialForm.linkedinUrl}
+                onChange={(e) => setTestimonialForm((prev) => ({ ...prev, linkedinUrl: e.target.value }))}
+                placeholder="https://linkedin.com/in/..."
               />
             </div>
 

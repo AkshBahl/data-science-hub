@@ -16,6 +16,7 @@ import {
   Target,
   ArrowRight,
   Quote,
+  Linkedin,
 } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
 
@@ -27,6 +28,7 @@ type Testimonial = {
   message: string;
   highlight?: string;
   avatarUrl?: string;
+  linkedinUrl?: string;
 };
 
 const Home = () => {
@@ -94,6 +96,7 @@ const Home = () => {
             message: data.message,
             highlight: data.highlight,
             avatarUrl: data.avatarUrl,
+            linkedinUrl: data.linkedinUrl,
           } as Testimonial;
         });
         setTestimonials(items);
@@ -280,8 +283,21 @@ const Home = () => {
                           .toUpperCase()}
                       </div>
                     )}
-                    <div>
-                      <p className="font-semibold">{testimonial.name}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold">{testimonial.name}</p>
+                        {testimonial.linkedinUrl && (
+                          <a
+                            href={testimonial.linkedinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:text-primary/80 transition-colors"
+                            aria-label={`${testimonial.name}'s LinkedIn profile`}
+                          >
+                            <Linkedin className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {[testimonial.role, testimonial.company].filter(Boolean).join(" · ")}
                       </p>

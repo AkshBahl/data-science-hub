@@ -67,10 +67,12 @@ const AuthModal = ({ open, onOpenChange, defaultMode = "login" }: AuthModalProps
       if (analytics) {
         logEvent(analytics, "login", { method: "email" });
       }
+      // Close modal on successful login
       onOpenChange(false);
       loginForm.reset();
     } catch (error: any) {
       console.error("Login error:", error);
+      // Don't close modal on error - let user see the error message
     } finally {
       setIsLoading(false);
     }

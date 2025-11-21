@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogOut, User } from "lucide-react";
+import { Menu, X, LogOut, User, ArrowLeft, Trophy } from "lucide-react";
 import { useState } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
+import AuthModal from "./AuthModal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +18,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,7 +27,9 @@ const Navigation = () => {
   const isPracticePage =
     location.pathname.startsWith("/interview-prep/module") ||
     location.pathname.startsWith("/interview-prep/question");
+  const isInterviewPrepPage = location.pathname === "/interview-prep";
   const hideNavLinks = isAuthPage || isAdminPage || isPracticePage;
+  const showBackButton = isPracticePage || isInterviewPrepPage;
 
   const handleLogout = async () => {
     try {
@@ -98,8 +102,18 @@ const Navigation = () => {
 
           {/* Auth Buttons & Theme Toggle */}
           <div className="hidden lg:flex items-center space-x-4">
+            {showBackButton && isPracticePage && (
+              <Button
+                variant="ghost"
+                onClick={() => navigate("/interview-prep")}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to modules
+              </Button>
+            )}
             <ThemeToggle />
-            {!hideNavLinks && currentUser ? (
+            {currentUser ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -128,6 +142,12 @@ const Navigation = () => {
                       <span>Profile</span>
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/leaderboard" className="cursor-pointer">
+                      <Trophy className="mr-2 h-4 w-4" />
+                      <span>Leaderboard</span>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
                     <LogOut className="mr-2 h-4 w-4" />
@@ -135,11 +155,33 @@ const Navigation = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : null}
+            ) : (
+              !isAuthPage && !isAdminPage && (
+                <Button
+                  variant="ghost"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-2"
+                >
+                  Sign In
+                </Button>
+              )
+            )}
           </div>
 
-          {/* Mobile Menu Button */}
-          {!hideNavLinks && (
+          {/* Mobile Menu Button / Back Button */}
+          {showBackButton && isPracticePage ? (
+            <div className="lg:hidden flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/interview-prep")}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="text-sm">Modules</span>
+              </Button>
+            </div>
+          ) : !hideNavLinks ? (
             <button
               className="lg:hidden p-2"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -147,7 +189,7 @@ const Navigation = () => {
             >
               {isMenuOpen ? <X className="h-6 w-6 text-foreground" /> : <Menu className="h-6 w-6 text-foreground" />}
             </button>
-          )}
+          ) : null}
         </div>
 
         {/* Mobile Menu */}
@@ -181,14 +223,33 @@ const Navigation = () => {
                     </div>
                   ) : null}
                 </div>
-                {currentUser && (
+                {currentUser ? (
+                  <>
+                    <Link to="/leaderboard" className="w-full">
+                      <Button variant="outline" className="w-full justify-start">
+                        <Trophy className="mr-2 h-4 w-4" />
+                        Leaderboard
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleLogout}
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Log out
+                    </Button>
+                  </>
+                ) : (
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={handleLogout}
+                    onClick={() => {
+                      setIsAuthModalOpen(true);
+                      setIsMenuOpen(false);
+                    }}
                   >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Log out
+                    Sign In
                   </Button>
                 )}
               </div>
@@ -196,6 +257,13 @@ const Navigation = () => {
           </div>
         )}
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal
+        open={isAuthModalOpen}
+        onOpenChange={setIsAuthModalOpen}
+        defaultMode="login"
+      />
     </nav>
   );
 };

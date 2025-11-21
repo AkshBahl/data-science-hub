@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle2, Loader2, Lock, Shield, Search } from "lucide-react";
+import { CheckCircle2, Loader2, Lock } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
+import AuthModal from "@/components/AuthModal";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -77,6 +78,7 @@ const InterviewModule = () => {
   const [difficultyFilter, setDifficultyFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const hasGlobalAccess = Boolean(profile?.hasGlobalAccess || profile?.isPaid);
   const hasModuleAccess = Boolean(profile?.purchasedModules && profile.purchasedModules[modulePricingDocId]);
@@ -193,8 +195,6 @@ const InterviewModule = () => {
     return unsubscribe;
   }, [currentUser]);
 
-  const moduleHasPremiumQuestions = questions.some((q) => q.tier === "paid");
-
   const companyOptions = useMemo(() => {
     const values = new Set<string>();
     questions.forEach((q) => {
@@ -242,14 +242,19 @@ const InterviewModule = () => {
   }, [questions, searchTerm, companyFilter, difficultyFilter, tierFilter, statusFilter, hasAnyPremiumAccess, completedQuestions]);
 
   const handleQuestionClick = (question: InterviewQuestion) => {
+    // If it's a paid question and user doesn't have access
     if (question.tier === "paid" && !hasAnyPremiumAccess) {
-      toast({
-        title: "Premium question",
-        description: "Unlock this module or all modules to access premium questions.",
-        variant: "destructive",
-      });
+      // Check if user is logged in
+      if (!currentUser) {
+        // Show auth modal if not logged in
+        setIsAuthModalOpen(true);
+        return;
+      }
+      // If logged in but no access, redirect to payment page
+      navigate(`/payment?module=${encodeURIComponent(moduleTitle)}`);
       return;
     }
+    // Navigate to question if free or user has access
     navigate(`/interview-prep/question/${question.id}`);
   };
 
@@ -387,15 +392,8 @@ const InterviewModule = () => {
   };
 
   return (
-    <div className="min-h-screen py-20">
+    <div className="min-h-screen pb-20 pt-4">
       <div className="container mx-auto px-2 lg:px-6 space-y-8 max-w-[95%] lg:max-w-7xl xl:max-w-[1600px]">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" className="px-0" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to modules
-          </Button>
-        </div>
-
         <div className="space-y-3">
           <p className="text-sm uppercase tracking-[0.4em] text-primary font-semibold">Module</p>
           <h1 className="text-4xl font-bold">{moduleTitle}</h1>
@@ -403,90 +401,6 @@ const InterviewModule = () => {
             {questions.length} curated interview question{questions.length !== 1 && "s"} covering real whiteboard challenges and take-home assignments.
           </p>
         </div>
-
-        {/* Premium Section */}
-        {moduleHasPremiumQuestions && (
-          <GlassCard className="p-6 border-primary/30 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-semibold flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  Premium Access
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Unlock premium questions for this module or get access to every module at once.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* MODULE ACCESS */}
-              <div className="rounded-xl border border-border/60 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">Unlock {moduleTitle}</p>
-                    <p className="text-xs text-muted-foreground">Access premium questions in this module.</p>
-                  </div>
-                  <span className="text-2xl font-bold">₹{modulePrice}</span>
-                </div>
-
-                <Button
-                  disabled={!currentUser || paymentMode === "module" || pricingLoading}
-                  onClick={() => handleCheckout("module")}
-                  className="w-full"
-                >
-                  {paymentMode === "module" ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing
-                    </>
-                  ) : (
-                    "Unlock module"
-                  )}
-                </Button>
-
-                {hasModuleAccess && (
-                  <p className="text-xs text-green-500 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> You already own this module.
-                  </p>
-                )}
-              </div>
-
-              {/* GLOBAL ACCESS */}
-              <div className="rounded-xl border border-border/60 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">Unlock All Modules</p>
-                    <p className="text-xs text-muted-foreground">Full access to every premium question.</p>
-                  </div>
-                  <span className="text-2xl font-bold text-primary">₹{globalPrice}</span>
-                </div>
-
-                <Button
-                  variant="secondary"
-                  disabled={!currentUser || paymentMode === "global" || pricingLoading}
-                  onClick={() => handleCheckout("global")}
-                  className="w-full"
-                >
-                  {paymentMode === "global" ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing
-                    </>
-                  ) : (
-                    "Unlock all modules"
-                  )}
-                </Button>
-
-                {hasGlobalAccess && (
-                  <p className="text-xs text-green-500 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> You already unlocked all modules.
-                  </p>
-                )}
-              </div>
-            </div>
-          </GlassCard>
-        )}
 
         {/* Questions Table */}
         <GlassCard className="p-6 space-y-4">
@@ -665,6 +579,13 @@ const InterviewModule = () => {
           </div>
         </GlassCard>
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal
+        open={isAuthModalOpen}
+        onOpenChange={setIsAuthModalOpen}
+        defaultMode="login"
+      />
     </div>
   );
 };

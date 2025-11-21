@@ -90,29 +90,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const ensureUserProfile = async (user: User) => {
     if (!user?.uid) return;
-    const userRef = doc(db, "users", user.uid);
-    const snapshot = await getDoc(userRef);
-    if (snapshot.exists()) {
-      await setDoc(
-        userRef,
-        {
-          displayName: user.displayName ?? snapshot.data().displayName ?? "",
-          email: user.email ?? snapshot.data().email ?? "",
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const snapshot = await getDoc(userRef);
+      if (snapshot.exists()) {
+        await setDoc(
+          userRef,
+          {
+            displayName: user.displayName ?? snapshot.data().displayName ?? "",
+            email: user.email ?? snapshot.data().email ?? "",
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } else {
+        await setDoc(userRef, {
+          displayName: user.displayName ?? "",
+          email: user.email ?? "",
+          isPaid: false,
+          hasGlobalAccess: false,
+          purchasedModules: {},
+          xp: 0,
+          createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-    } else {
-      await setDoc(userRef, {
-        displayName: user.displayName ?? "",
-        email: user.email ?? "",
-        isPaid: false,
-        hasGlobalAccess: false,
-        purchasedModules: {},
-        xp: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+        });
+      }
+    } catch (error: any) {
+      // Log error but don't throw - authentication succeeded even if profile update fails
+      console.error("Error ensuring user profile:", error);
+      // Don't throw - user is still authenticated, profile can be updated later
     }
   };
 
@@ -141,19 +147,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string) => {
     try {
       const credential = await signInWithEmailAndPassword(auth, email, password);
-      await ensureUserProfile(credential.user);
+      // Ensure profile but don't fail login if profile update has issues
+      // This runs in background and won't throw errors
+      ensureUserProfile(credential.user).catch((err) => {
+        console.error("Background profile update failed:", err);
+      });
       toast({
         title: "Welcome back!",
         description: "You have successfully logged in.",
       });
       return credential.user;
     } catch (error: any) {
-      const errorMessage = getErrorMessage(error);
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
+      // Only show error for actual authentication failures
+      const errorCode = error?.code;
+      if (errorCode && errorCode.startsWith('auth/')) {
+        const errorMessage = getErrorMessage(error);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
       throw error;
     }
   };

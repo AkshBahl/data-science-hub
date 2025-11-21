@@ -3,7 +3,7 @@ import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { Layers, Sparkles, Code2, BookOpen, Target, TrendingUp, ArrowRight, Zap, Database, Brain, Trophy, Box, Flame } from "lucide-react";
+import { Layers, Code2, BookOpen, Target, TrendingUp, ArrowRight, Zap, Database, Brain, Box, Flame } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -110,13 +110,6 @@ const InterviewPrep = () => {
 
         <div className="container mx-auto px-4">
           <div className="text-center space-y-6 max-w-4xl mx-auto">
-            <div className="inline-block animate-fade-in">
-              <span className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-2 text-sm text-primary">
-                <Sparkles className="h-4 w-4" />
-                Master Your Interview Skills
-              </span>
-            </div>
-
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight animate-fade-up">
               <span className="bg-gradient-primary bg-clip-text text-transparent">
                 Interview Preparation
@@ -125,23 +118,6 @@ const InterviewPrep = () => {
               <span className="text-foreground">Hub</span>
             </h1>
 
-            <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Master data science interviews with curated questions, real-world problems, and expert solutions. 
-              Practice with our interactive compiler and ace your next interview.
-            </p>
-
-            {/* Leaderboard Button */}
-            <div className="pt-4">
-              <Button
-                onClick={() => navigate("/leaderboard")}
-                variant="outline"
-                size="lg"
-                className="gap-2 border-primary/20 hover:bg-primary/10 hover:border-primary/40"
-              >
-                <Trophy className="h-5 w-5" />
-                View Leaderboard
-              </Button>
-            </div>
 
             {/* Stats */}
             <div className="flex flex-wrap justify-center gap-8 pt-8">
@@ -251,33 +227,6 @@ const InterviewPrep = () => {
       {/* Modules Section */}
       <section className="py-12">
         <div className="container mx-auto px-4 space-y-8">
-          <GlassCard className="p-6 md:p-8 bg-gradient-subtle border-primary/20">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-gradient-primary">
-                    <BookOpen className="h-6 w-6 text-primary-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.3em] text-primary font-semibold">Question Modules</p>
-                    <h2 className="text-3xl md:text-4xl font-bold mt-1">
-                      {moduleSummaries.length} {moduleSummaries.length === 1 ? "Topic" : "Topics"} Ready
-                    </h2>
-                  </div>
-                </div>
-                <p className="text-muted-foreground max-w-2xl">
-                  Click any module to explore curated interview questions. Each module contains real interview prompts 
-                  with interactive coding environments and detailed solutions.
-                </p>
-              </div>
-              <div className="flex-shrink-0">
-                <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
-                  <TrendingUp className="h-8 w-8 text-primary" />
-                </div>
-              </div>
-            </div>
-          </GlassCard>
-
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center space-y-4">

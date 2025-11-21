@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, GripVertical, Eye } from "lucide-react";
+import { CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, Eye, Copy, Check } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -24,6 +24,51 @@ type InterviewQuestion = {
   difficulty?: "easy" | "medium" | "hard";
   company?: string;
   hint?: string;
+  sqlTableNames?: string;
+};
+
+// Solution component with copy button
+const SolutionWithCopy = ({ solution }: { solution: string }) => {
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(solution);
+      setCopied(true);
+      toast({
+        title: "Copied!",
+        description: "Solution copied to clipboard",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast({
+        title: "Failed to copy",
+        description: "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <div className="rounded-lg bg-muted/30 border border-border/50 p-4 relative group">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={handleCopy}
+      >
+        {copied ? (
+          <Check className="h-4 w-4 text-green-500" />
+        ) : (
+          <Copy className="h-4 w-4" />
+        )}
+      </Button>
+      <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto pr-10">
+        {solution}
+      </pre>
+    </div>
+  );
 };
 
 // Helper function to detect language from module title
@@ -39,6 +84,17 @@ const detectLanguage = (moduleTitle: string): string => {
   if (titleLower.includes("go")) return "go";
   if (titleLower.includes("rust")) return "rust";
   return "python";
+};
+
+const sanitizeSqlIdentifier = (value: string, fallback: string) => {
+  if (!value) return fallback;
+  const cleaned = value
+    .toString()
+    .trim()
+    .replace(/[^A-Za-z0-9_]/g, "_")
+    .replace(/_{2,}/g, "_");
+  const withoutLeading = cleaned.replace(/^[^A-Za-z_]+/, "");
+  return withoutLeading || fallback;
 };
 
 // Helper function to parse JSON and check if it's a table structure
@@ -63,12 +119,28 @@ const parseTableJSON = (text: string): { columns?: string[]; values?: any[][] } 
 
 // Helper function to render question content with JSON table detection
 const renderQuestionContent = (questionText: string) => {
+  let tableCounter = 0;
+  const resolveTableName = (data?: Record<string, any>) => {
+    const raw =
+      (typeof data?.tableName === "string" && data.tableName.trim()) ||
+      (typeof data?.name === "string" && data.name.trim());
+    const fallback = `dataset_${tableCounter + 1}`;
+    const sqlName = sanitizeSqlIdentifier(raw || fallback, fallback);
+    tableCounter += 1;
+    return sqlName;
+  };
+
   // First, try to parse the entire question as JSON
   const tableData = parseTableJSON(questionText);
   if (tableData) {
+    const sqlName = resolveTableName(tableData);
     // Entire question is a JSON table
     return (
       <div className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
+        <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border/50 bg-muted/30 flex items-center gap-2">
+          <span>SQL table:</span>
+          <code className="px-2 py-0.5 rounded bg-background border border-border/50 font-semibold">{sqlName}</code>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -99,7 +171,7 @@ const renderQuestionContent = (questionText: string) => {
 
   // Try to find JSON blocks within the text (handles multi-line JSON)
   const jsonBlockRegex = /\{[\s\S]*?"columns"[\s\S]*?"values"[\s\S]*?\}/g;
-  const jsonBlocks: Array<{ start: number; end: number; data: { columns?: string[]; values?: any[][] } }> = [];
+  const jsonBlocks: Array<{ start: number; end: number; data: { columns?: string[]; values?: any[][]; tableName?: string; name?: string } }> = [];
   let match;
   
   while ((match = jsonBlockRegex.exec(questionText)) !== null) {
@@ -145,8 +217,15 @@ const renderQuestionContent = (questionText: string) => {
         {parts.map((part, idx) => {
           if (part.type === 'table') {
             const tableData = part.content as { columns?: string[]; values?: any[][] };
+            const sqlName = resolveTableName(tableData);
             return (
               <div key={idx} className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
+                <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border/50 bg-muted/30 flex items-center gap-2">
+                  <span>SQL table:</span>
+                  <code className="px-2 py-0.5 rounded bg-background border border-border/50 font-semibold">
+                    {sqlName}
+                  </code>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -213,21 +292,21 @@ const QuestionDetail = () => {
   const [activeTab, setActiveTab] = useState("question");
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [editorHeight, setEditorHeight] = useState(600);
+  const [output, setOutput] = useState<{ columns: string[]; values: any[][] } | null>(null);
+  const [textOutput, setTextOutput] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
     const saved = localStorage.getItem("questionDetailLeftPanelWidth");
-    return saved ? parseFloat(saved) : 40; // Default 40%
+    return saved ? parseFloat(saved) : 50; // Default 50%
   });
-  const [isResizing, setIsResizing] = useState(false);
+  const [compilerHeight, setCompilerHeight] = useState(() => {
+    const saved = localStorage.getItem("questionDetailCompilerHeight");
+    return saved ? parseFloat(saved) : 75; // Default 75%
+  });
+  const [isResizingHorizontal, setIsResizingHorizontal] = useState(false);
+  const [isResizingVertical, setIsResizingVertical] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to top when component mounts
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [questionId]);
-
-  // Track desktop vs mobile
   useEffect(() => {
     const updateIsDesktop = () => {
       setIsDesktop(window.innerWidth >= 1024);
@@ -237,50 +316,66 @@ const QuestionDetail = () => {
     return () => window.removeEventListener('resize', updateIsDesktop);
   }, []);
 
-  // Calculate editor height based on viewport
+  // Scroll to top when component mounts
   useEffect(() => {
-    const updateHeight = () => {
-      // Calculate height: viewport height - header (~100px) - editor header (60px) - padding (32px)
-      const height = Math.max(500, window.innerHeight - 192);
-      setEditorHeight(height);
-    };
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
-  }, []);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [questionId]);
 
-  // Save panel width to localStorage
+  // Save panel widths to localStorage
   useEffect(() => {
     localStorage.setItem("questionDetailLeftPanelWidth", leftPanelWidth.toString());
   }, [leftPanelWidth]);
 
-  // Handle resizing
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  useEffect(() => {
+    localStorage.setItem("questionDetailCompilerHeight", compilerHeight.toString());
+  }, [compilerHeight]);
+
+  // Handle horizontal resizing (left/right panels)
+  const handleMouseDownHorizontal = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setIsResizing(true);
+    setIsResizingHorizontal(true);
+  }, []);
+
+  // Handle vertical resizing (compiler/output)
+  const handleMouseDownVertical = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingVertical(true);
   }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing || !containerRef.current) return;
+      if (!containerRef.current) return;
 
-      const container = containerRef.current;
-      const containerRect = container.getBoundingClientRect();
-      const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+      if (isResizingHorizontal) {
+        const container = containerRef.current;
+        const containerRect = container.getBoundingClientRect();
+        const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+        const constrainedWidth = Math.max(30, Math.min(70, newLeftWidth));
+        setLeftPanelWidth(constrainedWidth);
+      }
 
-      // Constrain between 20% and 70%
-      const constrainedWidth = Math.max(20, Math.min(70, newLeftWidth));
-      setLeftPanelWidth(constrainedWidth);
+      if (isResizingVertical) {
+        const container = containerRef.current;
+        const rightPanel = container.querySelector('[data-right-panel]') as HTMLElement;
+        if (rightPanel) {
+          const panelRect = rightPanel.getBoundingClientRect();
+          const relativeY = e.clientY - panelRect.top;
+          const newHeight = (relativeY / panelRect.height) * 100;
+          const constrainedHeight = Math.max(20, Math.min(80, newHeight));
+          setCompilerHeight(constrainedHeight);
+        }
+      }
     };
 
     const handleMouseUp = () => {
-      setIsResizing(false);
+      setIsResizingHorizontal(false);
+      setIsResizingVertical(false);
     };
 
-    if (isResizing) {
+    if (isResizingHorizontal || isResizingVertical) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
+      document.body.style.cursor = isResizingHorizontal ? 'col-resize' : 'row-resize';
       document.body.style.userSelect = 'none';
     }
 
@@ -290,7 +385,8 @@ const QuestionDetail = () => {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing]);
+  }, [isResizingHorizontal, isResizingVertical]);
+
 
   // Fetch question
   useEffect(() => {
@@ -405,12 +501,6 @@ const QuestionDetail = () => {
     return (
       <div className="min-h-screen py-20">
         <div className="container mx-auto px-4 lg:px-6 max-w-4xl">
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" className="px-0" onClick={() => navigate(-1)}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-          </div>
           <div className="p-12 text-center border border-border rounded-lg bg-card">
             <div className="max-w-md mx-auto space-y-4">
               <div className="inline-flex p-4 rounded-full bg-muted/50">
@@ -430,117 +520,100 @@ const QuestionDetail = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex flex-col min-h-screen">
-        {/* Header with Back button and Language badge */}
-        <div className="px-4 lg:px-6 py-3 border-b border-border/50 bg-background/95 backdrop-blur-sm">
-            <div className="flex items-center justify-between gap-4">
-            <Button 
-              variant="ghost" 
-              className="px-3 hover:bg-muted/50 transition-colors" 
-              onClick={() => navigate(-1)}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">Back to Module</span>
-              <span className="sm:hidden">Back</span>
-            </Button>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                {question.company && (
-                  <Badge 
-                    variant="secondary" 
-                    className="gap-1.5 px-3 py-1 text-sm font-medium bg-secondary/20"
-                  >
-                    <CompanyLogo companyName={question.company} size={14} className="flex-shrink-0" />
-                    {question.company}
-                  </Badge>
-                )}
-                {question.difficulty && (
-                  <Badge
-                    variant="outline"
-                    className={`gap-1.5 px-3 py-1 text-sm font-medium ${
-                      question.difficulty === "easy"
-                        ? "border-green-500/60 text-green-400 bg-green-500/15"
-                        : question.difficulty === "medium"
-                        ? "border-yellow-500/60 text-yellow-400 bg-yellow-500/15"
-                        : "border-red-500/60 text-red-400 bg-red-500/15"
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-current" />
-                    {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
-                  </Badge>
-                )}
-                {isCompleted && (
-                  <Badge 
-                    variant="default" 
-                    className="gap-1.5 px-3 py-1 text-sm font-medium bg-green-500/20 text-green-400 border-green-500/50"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Completed
-                  </Badge>
-                )}
-              </div>
-              <Badge variant="outline" className="gap-2 px-3 py-1.5 border-primary/30 bg-primary/5">
-                <Code2 className="h-3.5 w-3.5 text-primary" />
-                <span className="font-medium text-primary">{language.toUpperCase()}</span>
+        {/* Header */}
+        <div className="px-4 lg:px-6 py-4 bg-background">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <h1 className="text-2xl lg:text-3xl font-bold">
+              {question.questionTitle || "Interview Question"}
+            </h1>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {question.difficulty && (
+                <Badge
+                  variant="outline"
+                  className={`gap-1.5 px-3 py-1 text-sm font-medium ${
+                    question.difficulty === "easy"
+                      ? "border-green-500/60 text-green-400 bg-green-500/15"
+                      : question.difficulty === "medium"
+                      ? "border-yellow-500/60 text-yellow-400 bg-yellow-500/15"
+                      : "border-red-500/60 text-red-400 bg-red-500/15"
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-current" />
+                  {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
+                </Badge>
+              )}
+              <Badge variant="outline" className="gap-2 px-3 py-1.5 border-border/50">
+                <Code2 className="h-3.5 w-3.5" />
+                <span className="font-medium">{language.toUpperCase()}</span>
               </Badge>
             </div>
           </div>
-          <h1 className="text-xl lg:text-2xl font-bold mt-3">
-            {question.questionTitle || "Interview Question"}
-          </h1>
+          {question.company && (
+            <div className="flex items-center gap-2 mb-4">
+              <Badge 
+                variant="secondary" 
+                className="gap-1.5 px-3 py-1 text-sm font-medium bg-secondary/20"
+              >
+                <CompanyLogo companyName={question.company} size={14} className="flex-shrink-0" />
+                {question.company}
+              </Badge>
+              {isCompleted && (
+                <Badge 
+                  variant="default" 
+                  className="gap-1.5 px-3 py-1 text-sm font-medium bg-green-500/20 text-green-400 border-green-500/50"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Completed
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Main content */}
         <div 
           ref={containerRef}
-          className="flex-1 flex flex-col lg:flex-row gap-6"
+          className="flex-1 flex flex-col lg:flex-row"
           style={{ minHeight: "calc(100vh - 140px)" }}
         >
-          {/* Left Panel: Question */}
+          {/* Left Panel: Question - Scrollable */}
           <div 
-            className="flex flex-col bg-background min-h-[400px] transition-none border border-border/30 rounded-xl lg:rounded-2xl lg:flex-1 lg:max-h-[calc(100vh-160px)] lg:overflow-y-auto custom-scrollbar"
-            style={{ 
-              width: isDesktop ? `${leftPanelWidth}%` : '100%',
-              minWidth: isDesktop ? '20%' : '100%',
-              maxWidth: isDesktop ? '70%' : '100%'
-            }}
+            className="flex flex-col bg-background transition-none lg:overflow-y-auto custom-scrollbar"
+            style={{ width: isDesktop ? `${leftPanelWidth}%` : '100%' }}
           >
-            <div className="p-4 border-b border-border/50">
+            <div className="px-4 lg:px-6 pb-3 border-b border-border/30">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="w-full">
-                  <TabsTrigger value="question" className="flex-1">
-                    <FileText className="h-4 w-4 mr-2" />
+                <TabsList className="bg-transparent h-auto p-0 gap-1">
+                  <TabsTrigger value="question" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2">
                     Question
                   </TabsTrigger>
                   <TabsTrigger 
                     value="hint"
                     disabled={!question.hint}
-                    className="flex-1"
+                    className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2"
                   >
-                    <Sparkles className="h-4 w-4 mr-2" />
                     Hint
                   </TabsTrigger>
                   <TabsTrigger 
                     value="expectedOutput"
                     disabled={!question.expectedOutput || !question.expectedOutput.trim()}
-                    className="flex-1"
+                    className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2"
                   >
-                    <Eye className="h-4 w-4 mr-2" />
                     Expected Output
                   </TabsTrigger>
                   <TabsTrigger 
                     value="solution" 
                     onClick={handleShowSolution}
                     disabled={!currentUser}
-                    className="flex-1"
+                    className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2"
                   >
-                    <Lightbulb className="h-4 w-4 mr-2" />
                     Solution
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 lg:px-6 py-4">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsContent value="question" className="mt-0">
                   {renderQuestionContent(question.question)}
@@ -625,11 +698,7 @@ const QuestionDetail = () => {
 
                 <TabsContent value="solution" className="mt-0">
                   {currentUser ? (
-                    <div className="rounded-lg bg-muted/30 border border-border/50 p-4">
-                      <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto">
-                        {question.answer}
-                      </pre>
-                    </div>
+                    <SolutionWithCopy solution={question.answer} />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-center space-y-4 py-12">
                       <div className="p-4 rounded-full bg-muted/50">
@@ -646,46 +715,116 @@ const QuestionDetail = () => {
             </div>
           </div>
 
-          {/* Resizer */}
+          {/* Horizontal Resizer */}
           {isDesktop && (
             <div
-              onMouseDown={handleMouseDown}
+              onMouseDown={handleMouseDownHorizontal}
               className={`w-1 bg-border/50 hover:bg-primary/50 cursor-col-resize transition-colors flex items-center justify-center group relative ${
-                isResizing ? 'bg-primary' : ''
+                isResizingHorizontal ? 'bg-primary' : ''
               }`}
               style={{ flexShrink: 0 }}
             >
               <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 flex items-center justify-center">
-                <GripVertical className="h-5 w-5 text-muted-foreground group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="h-8 w-0.5 bg-muted-foreground/30 group-hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             </div>
           )}
 
-          {/* Right Panel: Code Editor */}
+          {/* Right Panel: Code Editor and Output - Fixed */}
           <div 
-            className="flex flex-col bg-background min-h-[400px] flex-1 border border-border/30 rounded-xl lg:w-[40%] lg:sticky lg:top-[110px]"
+            data-right-panel
+            className="flex flex-col bg-background lg:sticky lg:top-[80px] lg:self-start"
             style={{ 
-              width: isDesktop ? `${100 - leftPanelWidth}%` : '100%'
+              width: isDesktop ? `${100 - leftPanelWidth}%` : '100%',
+              height: isDesktop ? 'calc(100vh - 120px)' : 'auto',
+              maxHeight: isDesktop ? 'calc(100vh - 120px)' : 'none'
             }}
           >
             {currentUser ? (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="p-4 border-b border-border/50 bg-muted/20 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Code2 className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold text-foreground">Code Editor</span>
+              <>
+                {/* Compiler Section - Top Half */}
+                <div 
+                  className="flex flex-col border-b border-border/30 overflow-hidden"
+                  style={{ height: `${compilerHeight}%`, minHeight: '200px' }}
+                >
+                  <div className="flex-1 overflow-hidden p-4 flex flex-col min-h-0">
+                    <CodeEditor
+                      language={language}
+                      question={question.question}
+                      questionId={question.id}
+                      height="100%"
+                      expectedOutput={question.expectedOutput}
+                      hideOutput={true}
+                      sqlTableNames={question.sqlTableNames}
+                      onOutputChange={(outputData, textOutputData) => {
+                        setOutput(outputData);
+                        setTextOutput(textOutputData);
+                      }}
+                    />
                   </div>
                 </div>
-                <div className="flex-1 overflow-hidden p-4 flex flex-col min-h-0">
-                  <CodeEditor
-                    language={language}
-                    question={question.question}
-                    questionId={question.id}
-                    height={`${editorHeight}px`}
-                    expectedOutput={question.expectedOutput}
-                  />
+
+                {/* Vertical Resizer */}
+                <div
+                  onMouseDown={handleMouseDownVertical}
+                  className={`h-1 bg-border/50 hover:bg-primary/50 cursor-row-resize transition-colors flex items-center justify-center group relative ${
+                    isResizingVertical ? 'bg-primary' : ''
+                  }`}
+                  style={{ flexShrink: 0 }}
+                >
+                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 flex items-center justify-center">
+                    <div className="w-8 h-0.5 bg-muted-foreground/30 group-hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
-              </div>
+
+                {/* Output Section - Bottom Half */}
+                <div 
+                  className="flex flex-col overflow-hidden"
+                  style={{ height: `${100 - compilerHeight}%`, minHeight: '200px' }}
+                >
+                    <div className="px-4 py-2 border-b border-border/30 bg-muted/20 flex-shrink-0">
+                      <span className="text-sm font-medium text-foreground">Output</span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                      {output && output.columns.length > 0 && output.values.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b-2 border-border/50 bg-muted/30">
+                                {output.columns.map((col, idx) => (
+                                  <th key={idx} className="px-5 py-3 text-left font-bold text-foreground">
+                                    {col}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {output.values.map((row, rowIdx) => (
+                                <tr key={rowIdx} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                                  {row.map((cell, cellIdx) => (
+                                    <td key={cellIdx} className="px-5 py-3 text-foreground/90">
+                                      {String(cell)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : textOutput ? (
+                        <div className="p-5">
+                          <pre className="text-sm text-foreground/90 font-mono whitespace-pre-wrap bg-background/70 p-4 rounded-lg border border-border/50 shadow-inner">
+                            {textOutput}
+                          </pre>
+                        </div>
+                      ) : (
+                        <div className="p-5 text-sm text-muted-foreground text-center">
+                          No results to display
+                        </div>
+                      )}
+                    </div>
+                  </div>
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4 p-8">
                 <div className="p-5 rounded-full bg-primary/10 border-2 border-primary/20">
