@@ -44,6 +44,13 @@ service cloud.firestore {
       allow write: if request.auth != null && 
                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
+
+    // Allow public read access to testimonials
+    match /testimonials/{testimonialId} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
     
     // Users collection - only authenticated users can read their own data
     match /users/{userId} {
@@ -73,6 +80,7 @@ service cloud.firestore {
    - `services` - All services
    - `caseStudies` - All case studies
    - `projects` - All projects
+   - `testimonials` - All learner reviews
 
 2. **Admin Write Access**: Only authenticated admin users can write to these collections.
 

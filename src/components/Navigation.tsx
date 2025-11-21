@@ -22,7 +22,10 @@ const Navigation = () => {
   const location = useLocation();
   const isAuthPage = ["/admin/login"].includes(location.pathname);
   const isAdminPage = location.pathname.startsWith("/admin");
-  const hideNavLinks = isAuthPage || isAdminPage;
+  const isPracticePage =
+    location.pathname.startsWith("/interview-prep/module") ||
+    location.pathname.startsWith("/interview-prep/question");
+  const hideNavLinks = isAuthPage || isAdminPage || isPracticePage;
 
   const handleLogout = async () => {
     try {

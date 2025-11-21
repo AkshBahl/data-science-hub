@@ -5,7 +5,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle2, Loader2, Lock, Shield } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, CheckCircle2, Loader2, Lock, Shield, Search } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -70,6 +72,11 @@ const InterviewModule = () => {
   const [pricingLoading, setPricingLoading] = useState(true);
   const [razorpayReady, setRazorpayReady] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"module" | "global" | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("all");
+  const [difficultyFilter, setDifficultyFilter] = useState("all");
+  const [tierFilter, setTierFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const hasGlobalAccess = Boolean(profile?.hasGlobalAccess || profile?.isPaid);
   const hasModuleAccess = Boolean(profile?.purchasedModules && profile.purchasedModules[modulePricingDocId]);
@@ -187,6 +194,52 @@ const InterviewModule = () => {
   }, [currentUser]);
 
   const moduleHasPremiumQuestions = questions.some((q) => q.tier === "paid");
+
+  const companyOptions = useMemo(() => {
+    const values = new Set<string>();
+    questions.forEach((q) => {
+      if (q.company) {
+        values.add(q.company);
+      }
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [questions]);
+
+  const hasCompanyless = useMemo(() => questions.some((q) => !q.company), [questions]);
+
+  const difficultyOptions = useMemo(() => {
+    const values = new Set<string>();
+    questions.forEach((q) => {
+      if (q.difficulty) {
+        values.add(q.difficulty);
+      }
+    });
+    return Array.from(values);
+  }, [questions]);
+
+  const hasDifficultyless = useMemo(() => questions.some((q) => !q.difficulty), [questions]);
+
+  const filteredQuestions = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    return questions.filter((question) => {
+      const normalizedTitle = (question.questionTitle || "Untitled Question").toLowerCase();
+      const matchesSearch = !search || normalizedTitle.includes(search);
+      const matchesCompany =
+        companyFilter === "all" ||
+        (question.company ? question.company === companyFilter : companyFilter === "none");
+      const matchesDifficulty =
+        difficultyFilter === "all" ||
+        (question.difficulty ? question.difficulty === difficultyFilter : difficultyFilter === "none");
+      const matchesTier = tierFilter === "all" || question.tier === tierFilter;
+
+      const isLocked = question.tier === "paid" && !hasAnyPremiumAccess;
+      const isCompleted = completedQuestions.has(question.id);
+      const derivedStatus = isLocked ? "locked" : isCompleted ? "completed" : "available";
+      const matchesStatus = statusFilter === "all" || derivedStatus === statusFilter;
+
+      return matchesSearch && matchesCompany && matchesDifficulty && matchesTier && matchesStatus;
+    });
+  }, [questions, searchTerm, companyFilter, difficultyFilter, tierFilter, statusFilter, hasAnyPremiumAccess, completedQuestions]);
 
   const handleQuestionClick = (question: InterviewQuestion) => {
     if (question.tier === "paid" && !hasAnyPremiumAccess) {
@@ -437,7 +490,80 @@ const InterviewModule = () => {
 
         {/* Questions Table */}
         <GlassCard className="p-6 space-y-4">
-          <h2 className="text-2xl font-semibold">Questions</h2>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-2xl font-semibold">Questions</h2>
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredQuestions.length} of {questions.length} question{questions.length !== 1 && "s"}
+              </p>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-4 md:grid-cols-3">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground">Company</p>
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All companies</SelectItem>
+                    {hasCompanyless && <SelectItem value="none">No company info</SelectItem>}
+                    {companyOptions.map((company) => (
+                      <SelectItem key={company} value={company}>
+                        {company}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground">Difficulty</p>
+                <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by difficulty" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All difficulties</SelectItem>
+                    {hasDifficultyless && <SelectItem value="none">No difficulty info</SelectItem>}
+                    {difficultyOptions.map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground">Access type</p>
+                <Select value={tierFilter} onValueChange={setTierFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All access types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="free">Free</SelectItem>
+                    <SelectItem value="paid">Premium</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground">Status</p>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Available</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="locked">Locked</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
 
           <div className="overflow-x-auto">
             <Table>
@@ -451,7 +577,16 @@ const InterviewModule = () => {
               </TableHeader>
 
               <TableBody>
-                {questions.map((question) => {
+                {filteredQuestions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4}>
+                      <div className="text-center text-muted-foreground py-6">
+                        No questions match your filters.
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {filteredQuestions.map((question) => {
                   const isCompleted = completedQuestions.has(question.id);
                   const isLocked = question.tier === "paid" && !hasAnyPremiumAccess;
 

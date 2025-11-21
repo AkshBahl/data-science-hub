@@ -482,17 +482,6 @@ const QuestionDetail = () => {
                 <Code2 className="h-3.5 w-3.5 text-primary" />
                 <span className="font-medium text-primary">{language.toUpperCase()}</span>
               </Badge>
-              {question.hint && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2 border-primary/40 text-primary hover:bg-primary/10"
-                  onClick={() => navigate(`/interview-prep/question/${question.id}/hint`)}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Hint Page
-                </Button>
-              )}
             </div>
           </div>
           <h1 className="text-xl lg:text-2xl font-bold mt-3">
@@ -503,11 +492,12 @@ const QuestionDetail = () => {
         {/* Main content */}
         <div 
           ref={containerRef}
-          className="flex-1 flex flex-col lg:flex-row overflow-hidden"
+          className="flex-1 flex flex-col lg:flex-row gap-6"
+          style={{ minHeight: "calc(100vh - 140px)" }}
         >
           {/* Left Panel: Question */}
           <div 
-            className="flex flex-col bg-background min-h-[500px] transition-none border-r border-border/50"
+            className="flex flex-col bg-background min-h-[400px] transition-none border border-border/30 rounded-xl lg:rounded-2xl lg:flex-1 lg:max-h-[calc(100vh-160px)] lg:overflow-y-auto custom-scrollbar"
             style={{ 
               width: isDesktop ? `${leftPanelWidth}%` : '100%',
               minWidth: isDesktop ? '20%' : '100%',
@@ -673,7 +663,7 @@ const QuestionDetail = () => {
 
           {/* Right Panel: Code Editor */}
           <div 
-            className="flex flex-col bg-background min-h-[500px] flex-1"
+            className="flex flex-col bg-background min-h-[400px] flex-1 border border-border/30 rounded-xl lg:w-[40%] lg:sticky lg:top-[110px]"
             style={{ 
               width: isDesktop ? `${100 - leftPanelWidth}%` : '100%'
             }}

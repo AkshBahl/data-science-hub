@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import GlassCard from "@/components/GlassCard";
-import { Link } from "react-router-dom";
 import {
   Brain,
   Users,
@@ -12,10 +15,24 @@ import {
   Award,
   Target,
   ArrowRight,
+  Quote,
 } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
 
+type Testimonial = {
+  id: string;
+  name: string;
+  role?: string;
+  company?: string;
+  message: string;
+  highlight?: string;
+  avatarUrl?: string;
+};
+
 const Home = () => {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [testimonialsLoading, setTestimonialsLoading] = useState(true);
+
   const services = [
     {
       icon: Brain,
@@ -61,6 +78,33 @@ const Home = () => {
     { number: "50+", label: "Case Studies" },
     { number: "10+", label: "Courses" },
   ];
+
+  useEffect(() => {
+    const testimonialsQuery = query(collection(db, "testimonials"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      testimonialsQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: data.name,
+            role: data.role,
+            company: data.company,
+            message: data.message,
+            highlight: data.highlight,
+            avatarUrl: data.avatarUrl,
+          } as Testimonial;
+        });
+        setTestimonials(items);
+        setTestimonialsLoading(false);
+      },
+      () => {
+        setTestimonialsLoading(false);
+      },
+    );
+    return unsubscribe;
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -192,6 +236,63 @@ const Home = () => {
           </div>
         </div>
       </section>
+
+      {/* Testimonials Section */}
+      {!testimonialsLoading && testimonials.length > 0 && (
+        <section className="py-20 bg-gradient-subtle relative">
+          <div className="container mx-auto px-4">
+            <div className="text-center mb-16 animate-fade-in">
+              <p className="text-sm uppercase tracking-[0.4em] text-primary font-semibold mb-3">Testimonials</p>
+              <h2 className="text-4xl md:text-5xl font-bold mb-4">What Learners Say</h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Real stories from professionals who used BytesOfData to advance their careers.
+              </p>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {testimonials.slice(0, 6).map((testimonial, index) => (
+                <GlassCard
+                  key={testimonial.id}
+                  className="p-6 h-full flex flex-col space-y-4 animate-fade-up"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                  <Quote className="h-8 w-8 text-primary" />
+                  <p className="text-lg text-foreground leading-relaxed flex-1">
+                    “{testimonial.message}”
+                  </p>
+                  {testimonial.highlight && (
+                    <p className="text-sm font-semibold text-primary">{testimonial.highlight}</p>
+                  )}
+                  <div className="flex items-center gap-3 pt-4 border-t border-border/50">
+                    {testimonial.avatarUrl ? (
+                      <img
+                        src={testimonial.avatarUrl}
+                        alt={`${testimonial.name} avatar`}
+                        className="h-12 w-12 rounded-full object-cover border border-border"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
+                        {testimonial.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p className="font-semibold">{testimonial.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {[testimonial.role, testimonial.company].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                  </div>
+                </GlassCard>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* CTA Section */}
       <section className="py-20 relative">

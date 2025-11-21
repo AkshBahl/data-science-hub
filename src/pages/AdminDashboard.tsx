@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck, Loader2, Layers, Menu } from "lucide-react";
+import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck, Loader2, Layers, Menu, Quote } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import {
   Dialog,
@@ -123,7 +123,18 @@ type Service = {
   ctaLabel?: string;
   ctaUrl?: string;
 };
-type AdminSection = "questions" | "case-studies" | "projects" | "blog" | "services" | "users";
+type AdminSection = "questions" | "case-studies" | "projects" | "blog" | "services" | "users" | "testimonials";
+
+type Testimonial = {
+  id: string;
+  name: string;
+  role?: string;
+  company?: string;
+  message: string;
+  highlight?: string;
+  avatarUrl?: string;
+  createdAt?: Date;
+};
 
 const AdminDashboard = () => {
   const DEFAULT_TITLE = DEFAULT_MODULE_TITLE;
@@ -218,6 +229,18 @@ const AdminDashboard = () => {
     ctaLabel: "",
     ctaUrl: "",
   });
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [isTestimonialDialogOpen, setIsTestimonialDialogOpen] = useState(false);
+  const [isSavingTestimonial, setIsSavingTestimonial] = useState(false);
+  const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
+  const [testimonialForm, setTestimonialForm] = useState({
+    name: "",
+    role: "",
+    company: "",
+    message: "",
+    highlight: "",
+    avatarUrl: "",
+  });
 
   const handleLogout = async () => {
     await logout();
@@ -249,6 +272,38 @@ const AdminDashboard = () => {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const testimonialsQuery = query(collection(db, "testimonials"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      testimonialsQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: data.name,
+            role: data.role,
+            company: data.company,
+            message: data.message,
+            highlight: data.highlight,
+            avatarUrl: data.avatarUrl,
+            createdAt: data.createdAt?.toDate?.(),
+          } as Testimonial;
+        });
+        setTestimonials(items);
+      },
+      (error) => {
+        console.error("Testimonials error:", error);
+        toast({
+          title: "Unable to load testimonials",
+          description: error.message || "Please try again later.",
+          variant: "destructive",
+        });
+      },
+    );
+    return unsubscribe;
+  }, [toast]);
 
   useEffect(() => {
     const pricingRef = collection(db, MODULE_PRICING_COLLECTION);
@@ -990,12 +1045,105 @@ const AdminDashboard = () => {
     }
   };
 
+  const resetTestimonialForm = () => {
+    setTestimonialForm({
+      name: "",
+      role: "",
+      company: "",
+      message: "",
+      highlight: "",
+      avatarUrl: "",
+    });
+  };
+
+  const openTestimonialDialog = (testimonial?: Testimonial) => {
+    if (testimonial) {
+      setEditingTestimonial(testimonial);
+      setTestimonialForm({
+        name: testimonial.name || "",
+        role: testimonial.role || "",
+        company: testimonial.company || "",
+        message: testimonial.message || "",
+        highlight: testimonial.highlight || "",
+        avatarUrl: testimonial.avatarUrl || "",
+      });
+    } else {
+      setEditingTestimonial(null);
+      resetTestimonialForm();
+    }
+    setIsTestimonialDialogOpen(true);
+  };
+
+  const handleSaveTestimonial = async () => {
+    if (!testimonialForm.name.trim() || !testimonialForm.message.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Name and feedback are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingTestimonial(true);
+    try {
+      const basePayload = {
+        name: testimonialForm.name.trim(),
+        message: testimonialForm.message.trim(),
+        ...(testimonialForm.role.trim() && { role: testimonialForm.role.trim() }),
+        ...(testimonialForm.company.trim() && { company: testimonialForm.company.trim() }),
+        ...(testimonialForm.highlight.trim() && { highlight: testimonialForm.highlight.trim() }),
+        ...(testimonialForm.avatarUrl.trim() && { avatarUrl: testimonialForm.avatarUrl.trim() }),
+      };
+
+      if (editingTestimonial) {
+        await updateDoc(doc(db, "testimonials", editingTestimonial.id), {
+          ...basePayload,
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Testimonial updated" });
+      } else {
+        await addDoc(collection(db, "testimonials"), {
+          ...basePayload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Testimonial added" });
+      }
+      setIsTestimonialDialogOpen(false);
+      setEditingTestimonial(null);
+      resetTestimonialForm();
+    } catch (error: any) {
+      toast({
+        title: "Failed to save testimonial",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingTestimonial(false);
+    }
+  };
+
+  const handleDeleteTestimonial = async (id: string) => {
+    if (!window.confirm("Delete this testimonial?")) return;
+    try {
+      await deleteDoc(doc(db, "testimonials", id));
+      toast({ title: "Testimonial removed" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete testimonial",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const navigationItems = [
     { id: "questions" as AdminSection, label: "Interview Questions", icon: FileText },
     { id: "case-studies" as AdminSection, label: "Case Studies", icon: FolderOpen },
     { id: "projects" as AdminSection, label: "Projects", icon: Briefcase },
     { id: "blog" as AdminSection, label: "Blog Posts", icon: Newspaper },
     { id: "services" as AdminSection, label: "Services", icon: Settings },
+    { id: "testimonials" as AdminSection, label: "Testimonials", icon: Quote },
     { id: "users" as AdminSection, label: "Learner Access", icon: UserCheck },
   ];
 
@@ -1011,6 +1159,8 @@ const AdminDashboard = () => {
         return "Manage blog posts that link to your Medium articles.";
       case "services":
         return "Manage services that appear on the Services page.";
+      case "testimonials":
+        return "Collect and curate learner testimonials shown on the homepage.";
       case "users":
         return "Toggle premium access for any user after payment confirmation.";
       default:
@@ -2265,6 +2415,178 @@ const AdminDashboard = () => {
     </GlassCard>
   );
 
+  const renderTestimonialsSection = () => (
+    <div className="space-y-6">
+      <GlassCard className="p-6">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Testimonials</h2>
+              <p className="text-sm text-muted-foreground">
+                Collect social proof to showcase on the homepage. {testimonials.length} testimonial
+                {testimonials.length !== 1 && "s"} published.
+              </p>
+            </div>
+            <Button onClick={() => openTestimonialDialog()} className="self-start sm:self-auto">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Testimonial
+            </Button>
+          </div>
+
+          {testimonials.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground border border-dashed rounded-lg">
+              No testimonials added yet.
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {testimonials.map((testimonial) => (
+                <GlassCard key={testimonial.id} className="p-5 space-y-4 border border-border/60 h-full flex flex-col">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold">{testimonial.name}</p>
+                      {(testimonial.role || testimonial.company) && (
+                        <p className="text-sm text-muted-foreground">
+                          {[testimonial.role, testimonial.company].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                      {testimonial.highlight && (
+                        <p className="text-sm text-primary mt-2 font-medium">{testimonial.highlight}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="icon" onClick={() => openTestimonialDialog(testimonial)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="destructive" size="icon" onClick={() => handleDeleteTestimonial(testimonial.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground flex-1 whitespace-pre-wrap">{testimonial.message}</p>
+                  {testimonial.avatarUrl && (
+                    <div className="flex items-center gap-3 pt-2 border-t border-border/50">
+                      <img
+                        src={testimonial.avatarUrl}
+                        alt={`${testimonial.name} avatar`}
+                        className="h-10 w-10 rounded-full object-cover border border-border"
+                      />
+                      <div>
+                        <p className="text-sm font-medium">{testimonial.name}</p>
+                        {(testimonial.role || testimonial.company) && (
+                          <p className="text-xs text-muted-foreground">
+                            {[testimonial.role, testimonial.company].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </GlassCard>
+              ))}
+            </div>
+          )}
+        </div>
+      </GlassCard>
+
+      <Dialog
+        open={isTestimonialDialogOpen}
+        onOpenChange={(open) => {
+          setIsTestimonialDialogOpen(open);
+          if (!open) {
+            setEditingTestimonial(null);
+            resetTestimonialForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingTestimonial ? "Edit Testimonial" : "Add Testimonial"}</DialogTitle>
+            <DialogDescription>
+              Testimonials appear on the homepage to build trust with new learners.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="testimonial-name">Name</Label>
+                <Input
+                  id="testimonial-name"
+                  value={testimonialForm.name}
+                  onChange={(e) => setTestimonialForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Ananya Sharma"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="testimonial-role">Role</Label>
+                <Input
+                  id="testimonial-role"
+                  value={testimonialForm.role}
+                  onChange={(e) => setTestimonialForm((prev) => ({ ...prev, role: e.target.value }))}
+                  placeholder="e.g. Data Scientist @ Google"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="testimonial-company">Company</Label>
+              <Input
+                id="testimonial-company"
+                value={testimonialForm.company}
+                onChange={(e) => setTestimonialForm((prev) => ({ ...prev, company: e.target.value }))}
+                placeholder="e.g. Google"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="testimonial-highlight">Short highlight</Label>
+              <Input
+                id="testimonial-highlight"
+                value={testimonialForm.highlight}
+                onChange={(e) => setTestimonialForm((prev) => ({ ...prev, highlight: e.target.value }))}
+                placeholder="e.g. Cracked 3 FAANG offers"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="testimonial-message">Feedback</Label>
+              <Textarea
+                id="testimonial-message"
+                rows={5}
+                value={testimonialForm.message}
+                onChange={(e) => setTestimonialForm((prev) => ({ ...prev, message: e.target.value }))}
+                placeholder="Describe their experience..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="testimonial-avatar">Avatar URL (optional)</Label>
+              <Input
+                id="testimonial-avatar"
+                type="url"
+                value={testimonialForm.avatarUrl}
+                onChange={(e) => setTestimonialForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
+                placeholder="https://images..."
+              />
+            </div>
+
+            <Button onClick={handleSaveTestimonial} disabled={isSavingTestimonial} className="w-full">
+              {isSavingTestimonial ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : editingTestimonial ? (
+                "Update Testimonial"
+              ) : (
+                "Add Testimonial"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+
   const renderUsersSection = () => (
     <GlassCard className="p-8 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -2387,6 +2709,8 @@ const AdminDashboard = () => {
         return renderBlogSection();
       case "services":
         return renderServicesSection();
+      case "testimonials":
+        return renderTestimonialsSection();
       case "users":
         return renderUsersSection();
       default:
